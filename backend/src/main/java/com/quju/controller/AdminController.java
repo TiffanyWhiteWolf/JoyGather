@@ -1,25 +1,157 @@
 package com.quju.controller;
 
 import com.quju.common.ApiResponse;
+import com.quju.dto.ActivityDto;
+import com.quju.dto.AdminDtos;
 import com.quju.dto.DashboardDto;
+import com.quju.dto.ReviewTaskDto;
+import com.quju.dto.TeamDto;
+import com.quju.dto.UserDto;
+import com.quju.service.ActivityService;
+import com.quju.service.AdminService;
+import com.quju.service.TeamService;
+import com.quju.service.UserService;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/admin")
 public class AdminController {
+    private final AdminService adminService;
+    private final ActivityService activityService;
+    private final TeamService teamService;
+    private final UserService userService;
+
+    public AdminController(AdminService adminService, ActivityService activityService, TeamService teamService, UserService userService) {
+        this.adminService = adminService;
+        this.activityService = activityService;
+        this.teamService = teamService;
+        this.userService = userService;
+    }
+
     @GetMapping("/dashboard")
-    public ApiResponse<DashboardDto> dashboard() {
-        Map<String, Integer> metrics = new LinkedHashMap<String, Integer>();
-        metrics.put("users", 28642); metrics.put("monthlyActivities", 1284);
-        metrics.put("activeTeams", 386); metrics.put("pendingReviews", 12);
-        Map<String, Integer> distribution = new LinkedHashMap<String, Integer>();
-        distribution.put("城市探索", 32); distribution.put("户外运动", 26);
-        distribution.put("兴趣聚会", 24); distribution.put("其他", 18);
-        return ApiResponse.success(new DashboardDto(metrics, distribution));
+    public ApiResponse<DashboardDto> dashboard(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        userService.requireAdmin(authorization);
+        return ApiResponse.success(adminService.dashboard());
+    }
+
+    @GetMapping("/reviews")
+    public ApiResponse<List<ReviewTaskDto>> reviews(@RequestParam(required = false) String query,
+                                                    @RequestParam(required = false) String type,
+                                                    @RequestHeader(value = "Authorization", required = false) String authorization) {
+        userService.requireAdmin(authorization);
+        return ApiResponse.success(adminService.reviews(query, type));
+    }
+
+    @PostMapping("/reviews/{id}/approve")
+    public ApiResponse<Void> approveReview(@PathVariable String id, @RequestBody(required = false) AdminDtos.ReasonRequest request,
+                                           @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto admin = userService.requireAdmin(authorization);
+        adminService.review(id, "已通过", request == null ? "" : request.getReason(), admin.getId());
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/reviews/{id}/reject")
+    public ApiResponse<Void> rejectReview(@PathVariable String id, @RequestBody AdminDtos.ReasonRequest request,
+                                          @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto admin = userService.requireAdmin(authorization);
+        adminService.review(id, "已驳回", request.getReason(), admin.getId());
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/reviews/{id}/changes")
+    public ApiResponse<Void> requireChanges(@PathVariable String id, @RequestBody AdminDtos.ReasonRequest request,
+                                            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto admin = userService.requireAdmin(authorization);
+        adminService.review(id, "要求修改", request.getReason(), admin.getId());
+        return ApiResponse.success(null);
+    }
+
+    @GetMapping("/users")
+    public ApiResponse<List<UserDto>> users(@RequestParam(required = false) String query,
+                                            @RequestParam(required = false) String role,
+                                            @RequestParam(required = false) String status,
+                                            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        userService.requireAdmin(authorization);
+        return ApiResponse.success(adminService.users(query, role, status));
+    }
+
+    @GetMapping("/merchant-applications")
+    public ApiResponse<List<Map<String, Object>>> merchantApplications(@RequestParam(required = false) String status,
+                                                                       @RequestHeader(value = "Authorization", required = false) String authorization) {
+        userService.requireAdmin(authorization);
+        return ApiResponse.success(adminService.merchantApplications(status));
+    }
+
+    @PostMapping("/users/{id}/ban")
+    public ApiResponse<Void> ban(@PathVariable String id, @RequestBody AdminDtos.ReasonRequest request,
+                                 @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto admin = userService.requireAdmin(authorization);
+        adminService.ban(id, request.getReason(), request.getUntil(), admin.getId());
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/users/{id}/unblock")
+    public ApiResponse<Void> unblock(@PathVariable String id, @RequestBody(required = false) AdminDtos.ReasonRequest request,
+                                     @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto admin = userService.requireAdmin(authorization);
+        adminService.unblock(id, admin.getId());
+        return ApiResponse.success(null);
+    }
+
+    @GetMapping("/activities")
+    public ApiResponse<List<ActivityDto>> activities(@RequestParam(required = false) String query,
+                                                     @RequestParam(required = false) String status,
+                                                     @RequestHeader(value = "Authorization", required = false) String authorization) {
+        userService.requireAdmin(authorization);
+        return ApiResponse.success(adminService.activities(query, status));
+    }
+
+    @PostMapping("/activities/{id}/offline")
+    public ApiResponse<Void> offlineActivity(@PathVariable String id, @RequestBody AdminDtos.ReasonRequest request,
+                                             @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto admin = userService.requireAdmin(authorization);
+        activityService.takeOffline(id, request.getReason(), admin.getId());
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/activities/{id}/restore")
+    public ApiResponse<Void> restoreActivity(@PathVariable String id, @RequestBody(required = false) AdminDtos.ReasonRequest request,
+                                             @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto admin = userService.requireAdmin(authorization);
+        activityService.restore(id, admin.getId());
+        return ApiResponse.success(null);
+    }
+
+    @GetMapping("/teams")
+    public ApiResponse<List<TeamDto>> teams(@RequestParam(required = false) String query,
+                                            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        userService.requireAdmin(authorization);
+        return ApiResponse.success(teamService.list(query, true));
+    }
+
+    @PostMapping("/teams/{id}/stop")
+    public ApiResponse<Void> stopTeam(@PathVariable String id, @RequestBody AdminDtos.ReasonRequest request,
+                                      @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto admin = userService.requireAdmin(authorization);
+        teamService.stop(id, request.getReason(), admin.getId());
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/teams/{id}/restore")
+    public ApiResponse<Void> restoreTeam(@PathVariable String id, @RequestBody(required = false) AdminDtos.ReasonRequest request,
+                                         @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto admin = userService.requireAdmin(authorization);
+        teamService.restore(id, admin.getId());
+        return ApiResponse.success(null);
     }
 }

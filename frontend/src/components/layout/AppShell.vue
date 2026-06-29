@@ -1,18 +1,63 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
-import { Bell, ChevronDown, Compass, Map, Menu, MessageCircle, Plus, Sparkles, Users, X } from 'lucide-vue-next'
-import { ref } from 'vue'
-import { currentUser } from '@/mock/data'
+import { Bell, ChevronDown, Compass, LogOut, Map, Menu, MessageCircle, Plus, Sparkles, Users, X } from 'lucide-vue-next'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
+import { apiGet, clearAuthStorage, logout as apiLogout } from '@/lib/api'
+import type { User } from '@/types'
 
 const app = useAppStore()
+const router = useRouter()
 const menuOpen = ref(false)
+const cityOpen = ref(false)
+const noticeOpen = ref(false)
+const currentUser = ref<User | null>(null)
+const cities = ['杭州', '上海', '南京', '苏州']
+const notices = ['活动报名和候补通知会在这里显示', '商家审核结果会通过站内通知同步', '小队新消息请前往消息页查看']
 const nav = [
   { to: '/', label: '发现', icon: Compass },
   { to: '/discover', label: '地图', icon: Map },
   { to: '/teams', label: '小队', icon: Users },
   { to: '/messages', label: '消息', icon: MessageCircle },
 ]
+
+async function loadCurrentUser() {
+  try {
+    currentUser.value = await apiGet<User>('/auth/me')
+    await app.refreshUserState()
+  } catch {
+    clearAuthStorage()
+    currentUser.value = null
+    await app.refreshUserState()
+  }
+}
+
+function selectCity(city: string) {
+  app.city = city
+  cityOpen.value = false
+  app.showToast(`已切换到${city}`)
+}
+
+async function logout() {
+  await apiLogout()
+  app.clearUserState()
+  currentUser.value = null
+  await router.push('/')
+  app.showToast('已退出登录')
+}
+
+function handleAuthChanged() {
+  void loadCurrentUser()
+}
+
+onMounted(async () => {
+  await loadCurrentUser()
+  window.addEventListener('quju:auth-changed', handleAuthChanged)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('quju:auth-changed', handleAuthChanged)
+})
 </script>
 
 <template>
@@ -23,7 +68,12 @@ const nav = [
           <span class="brand-mark"><span></span><span></span><span></span></span>
           <span>趣聚</span>
         </RouterLink>
-        <button class="city-pill"><span class="city-dot"></span>{{ app.city }}<ChevronDown :size="14" /></button>
+        <div class="top-popover-wrap">
+          <button class="city-pill" @click="cityOpen = !cityOpen"><span class="city-dot"></span>{{ app.city }}<ChevronDown :size="14" /></button>
+          <div v-if="cityOpen" class="top-popover city-menu">
+            <button v-for="city in cities" :key="city" :class="{ active: app.city === city }" @click="selectCity(city)">{{ city }}</button>
+          </div>
+        </div>
         <nav :class="['main-nav', { open: menuOpen }]">
           <RouterLink v-for="item in nav" :key="item.to" :to="item.to" @click="menuOpen = false">
             <component :is="item.icon" :size="18" />{{ item.label }}
@@ -33,8 +83,16 @@ const nav = [
         <div class="top-actions">
           <RouterLink to="/ai-planner" class="ai-link"><Sparkles :size="17" />AI 策划</RouterLink>
           <RouterLink to="/create" class="btn btn-primary btn-sm"><Plus :size="17" />发起活动</RouterLink>
-          <button class="icon-button notice"><Bell :size="19" /><span>{{ app.notifications }}</span></button>
-          <RouterLink to="/profile" class="avatar-link"><img :src="currentUser.avatar" :alt="currentUser.nickname" /></RouterLink>
+          <div class="top-popover-wrap">
+            <button class="icon-button notice" @click="noticeOpen = !noticeOpen"><Bell :size="19" /><span>{{ app.notifications }}</span></button>
+            <div v-if="noticeOpen" class="top-popover notice-menu">
+              <b>通知</b>
+              <p v-for="item in notices" :key="item">{{ item }}</p>
+            </div>
+          </div>
+          <RouterLink v-if="currentUser" to="/profile" class="avatar-link"><img :src="currentUser.avatar" :alt="currentUser.nickname" /></RouterLink>
+          <button v-if="currentUser" class="icon-button logout-button" title="退出登录" @click="logout"><LogOut :size="18" /></button>
+          <RouterLink v-else to="/auth" class="btn btn-outline btn-sm">登录</RouterLink>
           <button class="mobile-menu" @click="menuOpen = !menuOpen"><X v-if="menuOpen" /><Menu v-else /></button>
         </div>
       </div>
@@ -45,3 +103,15 @@ const nav = [
     </footer>
   </div>
 </template>
+
+<style scoped>
+.top-popover-wrap{position:relative;display:flex}
+.top-popover{position:absolute;z-index:40;right:0;top:calc(100% + 10px);min-width:160px;padding:10px;background:#fff;border:1px solid var(--color-line);border-radius:10px;box-shadow:var(--shadow-card)}
+.city-menu{display:grid;gap:4px}
+.city-menu button{padding:8px 10px;border:0;border-radius:8px;background:#fff;text-align:left;font-size:12px}
+.city-menu button.active,.city-menu button:hover{background:var(--color-primary-soft);color:var(--color-primary);font-weight:800}
+.notice-menu{width:250px}
+.notice-menu b{display:block;margin-bottom:6px;font-size:12px}
+.notice-menu p{margin:0;padding:8px 0;border-top:1px solid var(--color-line);color:var(--color-ink-soft);font-size:11px;line-height:1.5}
+.logout-button{color:var(--color-danger)}
+</style>

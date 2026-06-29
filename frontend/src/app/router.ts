@@ -32,4 +32,18 @@ const router = createRouter({
   ],
 })
 
+router.beforeEach((to) => {
+  const protectedPaths = ['/create', '/messages', '/profile', '/check-in']
+  if (protectedPaths.some(path => to.path.startsWith(path)) && !localStorage.getItem('quju:token')) {
+    return { path: '/auth', query: { redirect: to.fullPath } }
+  }
+  if (!to.path.startsWith('/admin')) return true
+  try {
+    const session = JSON.parse(localStorage.getItem('quju:session') || 'null') as { role?: string } | null
+    const token = localStorage.getItem('quju:token')
+    if (token && session?.role === '管理员') return true
+  } catch { /* redirect below */ }
+  return { path: '/auth', query: { role: 'admin', redirect: to.fullPath } }
+})
+
 export default router

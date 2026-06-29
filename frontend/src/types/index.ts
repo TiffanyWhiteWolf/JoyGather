@@ -1,7 +1,7 @@
 export type ActivityStatus = '草稿' | '审核中' | '报名中' | '已截止' | '即将开始' | '进行中' | '已结束' | '已下架'
 export type ActivityCategory = '城市探索' | '户外运动' | '桌游聚会' | '学习交流' | '运动健身' | '公益活动'
 export type UserRole = '个人用户' | '商家用户' | '管理员'
-export type ReviewStatus = '待审核' | '已通过' | '已驳回'
+export type ReviewStatus = '待审核' | '已通过' | '已驳回' | '要求修改'
 
 export interface User {
   id: string
@@ -9,12 +9,20 @@ export interface User {
   avatar: string
   role: UserRole
   city: string
+  gender?: string
+  birthday?: string
   bio: string
   interests: string[]
   following: number
   followers: number
   credit: number
   verified?: boolean
+  status?: '正常' | '已封禁'
+  banReason?: string
+  banUntil?: string
+  merchantName?: string
+  merchantNickname?: string
+  merchantFields?: string[]
 }
 
 export interface Activity {
@@ -26,6 +34,9 @@ export interface Activity {
   cover: string
   date: string
   time: string
+  startAt?: string
+  endAt?: string
+  deadline?: string
   location: string
   district: string
   distance: number
@@ -38,6 +49,9 @@ export interface Activity {
   status: ActivityStatus
   organizer: User
   featured?: boolean
+  safetyNote?: string
+  minAge?: number
+  joinFields?: string[]
 }
 
 export interface Team {
@@ -50,6 +64,8 @@ export interface Team {
   capacity: number
   joinMode: '公开加入' | '审核加入'
   activeNow: number
+  status?: '正常' | '已停用'
+  stopReason?: string
 }
 
 export interface Registration {
@@ -95,9 +111,14 @@ export interface Message {
   id: string
   senderId: string
   content: string
+  type?: 'TEXT' | 'IMAGE' | 'FILE' | 'LOCATION'
+  mediaUrl?: string
+  latitude?: number
+  longitude?: number
   time: string
   mine: boolean
   read: boolean
+  recalled?: boolean
 }
 
 export interface Conversation {

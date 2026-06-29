@@ -1,28 +1,18 @@
 import { defineStore } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
+import { apiGet } from '@/lib/api'
 import type { ActivityDraft } from '@/types'
-
-const readList = (key: string, fallback: string[]) => {
-  try { return JSON.parse(localStorage.getItem(key) || '') as string[] } catch { return fallback }
-}
 
 export const useAppStore = defineStore('app', () => {
   const city = ref('杭州')
   const notifications = ref(3)
-  const joinedActivityIds = ref<string[]>(readList('quju:joined', ['act-001']))
-  const waitingActivityIds = ref<string[]>(readList('quju:waiting', ['act-003']))
-  const joinedTeamIds = ref<string[]>(readList('quju:teams', ['team-01']))
+  const joinedActivityIds = ref<string[]>([])
+  const waitingActivityIds = ref<string[]>([])
+  const joinedTeamIds = ref<string[]>([])
   const draft = ref<ActivityDraft | null>(null)
   const submittedActivities = ref<ActivityDraft[]>([])
   const toast = ref('')
   let toastTimer = 0
-
-  try { draft.value = JSON.parse(localStorage.getItem('quju:draft') || 'null') as ActivityDraft | null } catch { draft.value = null }
-  try { submittedActivities.value = JSON.parse(localStorage.getItem('quju:submitted') || '[]') as ActivityDraft[] } catch { submittedActivities.value = [] }
-
-  watch(joinedActivityIds, value => localStorage.setItem('quju:joined', JSON.stringify(value)), { deep: true })
-  watch(waitingActivityIds, value => localStorage.setItem('quju:waiting', JSON.stringify(value)), { deep: true })
-  watch(joinedTeamIds, value => localStorage.setItem('quju:teams', JSON.stringify(value)), { deep: true })
 
   function showToast(message: string) {
     toast.value = message
@@ -56,27 +46,52 @@ export const useAppStore = defineStore('app', () => {
 
   function saveDraft(value: ActivityDraft) {
     draft.value = { ...value, updatedAt: new Date().toLocaleString('zh-CN', { hour12: false }) }
-    localStorage.setItem('quju:draft', JSON.stringify(draft.value))
     showToast('草稿已保存，可稍后继续编辑')
   }
 
   function clearDraft() {
     draft.value = null
-    localStorage.removeItem('quju:draft')
   }
 
   function submitActivity(value: ActivityDraft) {
     const submitted = { ...value, updatedAt: new Date().toLocaleString('zh-CN', { hour12: false }) }
     submittedActivities.value = [submitted, ...submittedActivities.value.filter(item => item.id !== value.id)]
-    localStorage.setItem('quju:submitted', JSON.stringify(submittedActivities.value))
     clearDraft()
     showToast(value.capacity > 50 ? '已提交人工审核，可在活动管理中查看进度' : 'AI 安全审核通过，活动已发布')
+  }
+
+  function clearUserState() {
+    joinedActivityIds.value = []
+    waitingActivityIds.value = []
+    joinedTeamIds.value = []
+    draft.value = null
+    submittedActivities.value = []
+  }
+
+  async function refreshUserState() {
+    if (!localStorage.getItem('quju:token')) {
+      clearUserState()
+      return
+    }
+    try {
+      const statuses = await apiGet<Record<string, string>>('/activities/registrations/me')
+      joinedActivityIds.value = Object.entries(statuses).filter(([, status]) => status === '已报名' || status === '已签到').map(([id]) => id)
+      waitingActivityIds.value = Object.entries(statuses).filter(([, status]) => status === '候补中').map(([id]) => id)
+    } catch {
+      joinedActivityIds.value = []
+      waitingActivityIds.value = []
+    }
+    try {
+      joinedTeamIds.value = await apiGet<string[]>('/teams/memberships/me')
+    } catch {
+      joinedTeamIds.value = []
+    }
   }
 
   const registrationCount = computed(() => joinedActivityIds.value.length)
 
   return {
     city, notifications, joinedActivityIds, waitingActivityIds, joinedTeamIds, draft, submittedActivities, toast,
-    registrationCount, showToast, joinActivity, cancelRegistration, joinTeam, saveDraft, clearDraft, submitActivity,
+    registrationCount, showToast, joinActivity, cancelRegistration, joinTeam, saveDraft, clearDraft, submitActivity, clearUserState, refreshUserState,
   }
 })

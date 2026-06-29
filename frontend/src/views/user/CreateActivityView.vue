@@ -2,9 +2,10 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CalendarDays, Check, ChevronLeft, ClipboardCopy, MapPin, Save, ShieldCheck, Sparkles, Users } from 'lucide-vue-next'
-import { activities } from '@/mock/data'
 import { useAppStore } from '@/stores/app'
-import type { ActivityCategory, ActivityDraft } from '@/types'
+import { apiGet, apiPost } from '@/lib/api'
+import LocationPicker from '@/components/map/LocationPicker.vue'
+import type { Activity, ActivityCategory, ActivityDraft } from '@/types'
 
 const app = useAppStore()
 const route = useRoute()
@@ -12,6 +13,8 @@ const router = useRouter()
 const step = ref(1)
 const submitted = ref(false)
 const error = ref('')
+const longitude = ref(120.15507)
+const latitude = ref(30.274085)
 const categories: ActivityCategory[] = ['城市探索', '户外运动', '桌游聚会', '学习交流', '运动健身', '公益活动']
 const templates = [
   { name: '城市探索', category: '城市探索' as ActivityCategory, title: '周末城市漫步', tags: 'Citywalk、摄影、新手友好', summary: '不赶路地认识城市，也认识同行的人。', safety: '请穿舒适的鞋，遵守交通规则并保持队伍联系。' },
@@ -27,6 +30,29 @@ const form = reactive<ActivityDraft>({
 const savedAt = computed(() => app.draft?.updatedAt || '尚未保存')
 const reviewMode = computed(() => form.capacity > 50 ? '人工审核' : 'AI 自动审核')
 
+interface ActivityRequest {
+  title: string
+  summary: string
+  description: string
+  category: ActivityCategory
+  tags: string[]
+  date: string
+  time: string
+  startTime: string
+  endTime: string
+  deadline: string
+  location: string
+  district: string
+  capacity: number
+  price: number
+  longitude: number
+  latitude: number
+  minAge: number
+  safetyNote: string
+  joinFields: string[]
+  submitToken: string
+}
+
 function useTemplate(index: number) {
   const item = templates[index]
   Object.assign(form, { category: item.category, title: item.title, tags: item.tags, summary: item.summary, safetyNote: item.safety })
@@ -38,29 +64,86 @@ function validateCurrentStep() {
   if (step.value === 1 && (!form.title.trim() || !form.summary.trim() || !form.tags.trim())) error.value = '请完整填写活动名称、标签和简介。'
   if (step.value === 2 && (!form.date || !form.startTime || !form.endTime || !form.location.trim() || !form.deadline)) error.value = '请完整填写活动时间、报名截止时间和集合地点。'
   if (step.value === 2 && form.startTime && form.endTime && form.startTime >= form.endTime) error.value = '活动结束时间需要晚于开始时间。'
+  if (step.value === 2 && form.date && form.startTime && new Date(`${form.date}T${form.startTime}:00`).getTime() <= Date.now()) error.value = '活动开始时间需要晚于当前时间。'
+  if (step.value === 2 && form.date && form.startTime && form.deadline && new Date(form.deadline).getTime() > new Date(`${form.date}T${form.startTime}:00`).getTime()) error.value = '报名截止时间不能晚于活动开始时间。'
   if (step.value === 3 && (form.capacity < 2 || !form.safetyNote.trim())) error.value = '人数上限至少为 2 人，并请补充安全须知。'
   return !error.value
 }
 
-function next() {
-  if (!validateCurrentStep()) return
-  if (step.value < 4) step.value++
-  else {
-    app.submitActivity({ ...form })
-    submitted.value = true
+function splitTags() {
+  return form.tags.split(/[、,，]/).map(item => item.trim()).filter(Boolean).slice(0, 5)
+}
+
+function toActivityRequest(): ActivityRequest {
+  return {
+    title: form.title,
+    summary: form.summary,
+    description: form.summary,
+    category: form.category,
+    tags: splitTags(),
+    date: form.date,
+    time: `${form.startTime} - ${form.endTime}`,
+    startTime: form.startTime,
+    endTime: form.endTime,
+    deadline: form.deadline,
+    location: form.location,
+    district: form.district,
+    capacity: form.capacity,
+    price: form.price,
+    longitude: longitude.value,
+    latitude: latitude.value,
+    minAge: form.minAge,
+    safetyNote: form.safetyNote,
+    joinFields: form.joinFields,
+    submitToken: form.id,
   }
 }
 
-function save() { app.saveDraft({ ...form }) }
+async function next() {
+  if (!validateCurrentStep()) return
+  if (step.value < 4) step.value++
+  else {
+    try {
+      await apiPost<Activity>('/activities', toActivityRequest())
+      app.submitActivity({ ...form })
+      await app.refreshUserState()
+      submitted.value = true
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '创建活动失败，请稍后重试'
+    }
+  }
+}
+
+async function save() {
+  try {
+    await apiPost<Activity>('/activities/drafts', toActivityRequest())
+    app.saveDraft({ ...form })
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '保存草稿失败'
+  }
+}
 function toggleField(field: string) {
   form.joinFields = form.joinFields.includes(field) ? form.joinFields.filter(item => item !== field) : [...form.joinFields, field]
 }
 
-onMounted(() => {
+function selectLocation(point: { location: string; district: string; longitude: number; latitude: number }) {
+  form.location = point.location
+  form.district = point.district
+  longitude.value = point.longitude
+  latitude.value = point.latitude
+}
+
+onMounted(async () => {
   if (app.draft) Object.assign(form, app.draft)
   const cloneId = String(route.query.clone || '')
-  const source = activities.find(item => item.id === cloneId)
-  if (source) Object.assign(form, { id: `draft-${Date.now()}`, title: `${source.title}（复刻）`, category: source.category, tags: source.tags.join('、'), summary: source.description, location: source.location, district: source.district, capacity: source.capacity, price: source.price })
+  if (cloneId) {
+    const source = await apiGet<Activity>(`/activities/${cloneId}`)
+    if (source) {
+      Object.assign(form, { id: `draft-${Date.now()}`, title: `${source.title}（复刻）`, category: source.category, tags: source.tags.join('、'), summary: source.description, location: source.location, district: source.district, capacity: source.capacity, price: source.price })
+      longitude.value = Number(source.longitude)
+      latitude.value = Number(source.latitude)
+    }
+  }
   if (route.query.ai === '1') Object.assign(form, { title: '月光底片｜老街夜游摄影漫步', category: '城市探索', tags: '城市探索、摄影、新手友好', summary: '用镜头收集老街的灯光与路人，不比器材，只交换观察城市的方式。', safetyNote: '请确认夜间照明、紧急联系人和清晰的集合地点。' })
 })
 </script>
@@ -87,7 +170,8 @@ onMounted(() => {
           <div class="form-grid"><div class="input-group"><label>活动日期 *</label><input v-model="form.date" class="input" type="date" /></div><div class="input-group"><label>报名截止 *</label><input v-model="form.deadline" class="input" type="datetime-local" /></div></div>
           <div class="form-grid"><div class="input-group"><label>开始时间 *</label><input v-model="form.startTime" class="input" type="time" /></div><div class="input-group"><label>结束时间 *</label><input v-model="form.endTime" class="input" type="time" /></div></div>
           <div class="form-grid"><div class="input-group"><label>城区 *</label><select v-model="form.district" class="select"><option v-for="item in ['拱墅区','西湖区','上城区','滨江区','余杭区']" :key="item">{{ item }}</option></select></div><div class="input-group"><label>集合地点 *</label><input v-model.trim="form.location" class="input" placeholder="输入可被准确找到的地点" /></div></div>
-          <div class="map-picker"><MapPin /><div><b>地图选点已开启</b><p>演示坐标：杭州 {{ form.district }} · {{ form.location || '点击地图选择集合点' }}</p></div><button @click="form.location='桥西历史文化街区游客中心'">选用推荐点位</button></div>
+          <LocationPicker @select="selectLocation" />
+          <div class="map-picker"><MapPin /><div><b>地图选点已开启</b><p>当前坐标：{{ latitude.toFixed(5) }}, {{ longitude.toFixed(5) }} · {{ form.location || '点击地图选择集合点' }}</p></div><button @click="selectLocation({ location:'桥西历史文化街区游客中心', district:'拱墅区', longitude:120.139863, latitude:30.318332 })">选用推荐点位</button></div>
         </template>
 
         <template v-else-if="step===3">

@@ -1,8 +1,8 @@
-import { computed, ref } from 'vue'
-import { activities } from '@/mock/data'
-import type { ActivityCategory } from '@/types'
+import { computed, ref, type Ref } from 'vue'
+import type { Activity, ActivityCategory } from '@/types'
 
-export function useActivityFilters() {
+export function useActivityFilters(source?: Ref<Activity[]>) {
+  const activities = source ?? ref<Activity[]>([])
   const keyword = ref('')
   const categories = ref<ActivityCategory[]>([])
   const maxDistance = ref(20)
@@ -24,7 +24,7 @@ export function useActivityFilters() {
     return days >= 0 && days <= daysUntilSunday && [0, 6].includes(activityDate.getDay())
   }
 
-  const filteredActivities = computed(() => activities.filter((activity) => {
+  const filteredActivities = computed(() => activities.value.filter((activity) => {
     const haystack = `${activity.title}${activity.summary}${activity.tags.join('')}`.toLowerCase()
     return haystack.includes(keyword.value.toLowerCase())
       && (!categories.value.length || categories.value.includes(activity.category))

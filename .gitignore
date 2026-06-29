@@ -1,0 +1,14 @@
+.DS_Store
+
+# Local dependency/cache directories
+.m2/
+.npm/
+frontend/node_modules/
+
+# Local runtime/config
+.build/
+backend/src/main/resources/application-local.yml
+
+# Build outputs
+backend/target/
+frontend/dist/

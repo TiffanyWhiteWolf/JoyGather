@@ -1,0 +1,30 @@
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/quju_dev?useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: quju_app
+    password:
+  mail:
+    host:
+    port: 587
+    username:
+    password:
+
+quju:
+  app:
+    public-base-url: http://localhost:5173
+    uploads-dir: ../.build/uploads
+  mail:
+    from: no-reply@quju.local
+  amap:
+    key:
+  ai:
+    base-url:
+    api-key:
+    model: gpt-4o-mini
+  s3:
+    endpoint:
+    region: us-east-1
+    bucket:
+    access-key:
+    secret-key:
+    public-base-url:

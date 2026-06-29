@@ -1,18 +1,44 @@
 <script setup lang="ts">
 import { Grid2X2, ListFilter, Map, Search, SlidersHorizontal } from 'lucide-vue-next'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import ActivityCard from '@/components/activity/ActivityCard.vue'
 import CityMap from '@/components/map/CityMap.vue'
 import { useActivityFilters } from '@/hooks/useActivityFilters'
-import type { ActivityCategory } from '@/types'
+import { apiGet } from '@/lib/api'
+import type { Activity, ActivityCategory } from '@/types'
 
 const route = useRoute()
-const { keyword, categories: selectedCategories, maxDistance, onlyFree, district, timeRange, toggleCategory, filteredActivities } = useActivityFilters()
+const allActivities = ref<Activity[]>([])
+const { keyword, categories: selectedCategories, maxDistance, onlyFree, district, timeRange, toggleCategory, filteredActivities } = useActivityFilters(allActivities)
 const view = ref<'grid' | 'map'>('grid')
 const advancedOpen = ref(false)
+const sortMode = ref<'综合推荐' | '距离最近' | '价格最低'>('综合推荐')
 const categories: ActivityCategory[] = ['城市探索','户外运动','桌游聚会','学习交流','运动健身','公益活动']
-onMounted(() => { keyword.value = String(route.query.q ?? ''); if (route.query.view === 'map') view.value = 'map' })
+const sortedActivities = computed(() => {
+  const rows = [...filteredActivities.value]
+  if (sortMode.value === '距离最近') return rows.sort((a, b) => a.distance - b.distance)
+  if (sortMode.value === '价格最低') return rows.sort((a, b) => a.price - b.price)
+  return rows.sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)) || a.distance - b.distance)
+})
+function toggleSort() {
+  sortMode.value = sortMode.value === '综合推荐' ? '距离最近' : sortMode.value === '距离最近' ? '价格最低' : '综合推荐'
+}
+async function loadActivities(bounds?: { minLng: number; maxLng: number; minLat: number; maxLat: number }) {
+  const params = new URLSearchParams()
+  if (bounds) {
+    params.set('minLng', String(bounds.minLng))
+    params.set('maxLng', String(bounds.maxLng))
+    params.set('minLat', String(bounds.minLat))
+    params.set('maxLat', String(bounds.maxLat))
+  }
+  allActivities.value = await apiGet<Activity[]>(`/activities${params.size ? `?${params}` : ''}`)
+}
+onMounted(async () => {
+  keyword.value = String(route.query.q ?? '')
+  if (route.query.view === 'map') view.value = 'map'
+  await loadActivities()
+})
 </script>
 <template>
   <div class="container discover-page">
@@ -20,9 +46,9 @@ onMounted(() => { keyword.value = String(route.query.q ?? ''); if (route.query.v
     <div class="search-filter"><div class="big-search"><Search :size="20" /><input v-model="keyword" placeholder="搜索活动、地点、兴趣标签" /><span>⌘ K</span></div><button class="btn btn-outline" @click="advancedOpen=!advancedOpen"><SlidersHorizontal :size="18" />高级筛选</button></div>
     <div class="filter-panel"><div class="filter-group"><b>活动类型（可多选）</b><div class="chips"><button :class="{active:!selectedCategories.length}" @click="selectedCategories=[]">全部</button><button v-for="item in categories" :key="item" :class="{active:selectedCategories.includes(item)}" @click="toggleCategory(item)">{{ item }}</button></div></div><div class="filter-group distance"><b>距离 ≤ {{ maxDistance }}km</b><input v-model="maxDistance" type="range" min="1" max="20" /><label><input v-model="onlyFree" type="checkbox" /> 只看免费</label></div></div>
     <div v-if="advancedOpen" class="advanced-panel"><label>城区<select v-model="district"><option v-for="item in ['全部城区','拱墅区','西湖区','上城区','滨江区']" :key="item">{{ item }}</option></select></label><label>时间范围<select v-model="timeRange"><option>全部时间</option><option>今天</option><option>本周</option><option>本周末</option></select></label><label>费用<input v-model="onlyFree" type="checkbox" /> 仅免费活动</label><button @click="district='全部城区';timeRange='全部时间';onlyFree=false;maxDistance=20;selectedCategories=[]">重置筛选</button></div>
-    <div class="result-bar"><span>共找到 <b>{{ filteredActivities.length }}</b> 场活动</span><button><ListFilter :size="15" />综合推荐</button></div>
-    <div v-if="view==='grid'" class="activity-grid"><ActivityCard v-for="activity in filteredActivities" :key="activity.id" :activity="activity" /></div>
-    <div v-else class="map-layout"><div class="map-list"><ActivityCard v-for="activity in filteredActivities" :key="activity.id" :activity="activity" /></div><CityMap :activities="filteredActivities" /></div>
+    <div class="result-bar"><span>共找到 <b>{{ sortedActivities.length }}</b> 场活动</span><button @click="toggleSort"><ListFilter :size="15" />{{ sortMode }}</button></div>
+    <div v-if="view==='grid'" class="activity-grid"><ActivityCard v-for="activity in sortedActivities" :key="activity.id" :activity="activity" /></div>
+    <div v-else class="map-layout"><div class="map-list"><ActivityCard v-for="activity in sortedActivities" :key="activity.id" :activity="activity" /></div><CityMap :activities="sortedActivities" @bounds-change="loadActivities" /></div>
     <div v-if="!filteredActivities.length" class="empty-state"><Search :size="34" /><h3>暂时没找到合适的活动</h3><p>放宽一点距离，或换个关键词试试。</p></div>
   </div>
 </template>

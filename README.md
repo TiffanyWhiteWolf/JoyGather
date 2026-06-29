@@ -4,15 +4,15 @@
 
 ## 已实现的需求闭环
 
-- 邮箱登录、个人/商家注册、激活邮件结果页和商家营业凭证上传
-- 首页信息流、关键词搜索、多选活动类型、高级筛选和地图模式
-- 活动模板、活动克隆、AI 策划入口、四步创建、草稿本地保存和审核分流
+- 邮箱登录、个人/商家注册、本地激活链接、管理员登录和 Token 会话
+- 首页最新/推荐/附近信息流、关键词搜索、多选活动类型、高级筛选和地图模式
+- 活动模板、活动克隆、地图选点、高德地点搜索、AI 策划、四步创建、MySQL 草稿保存和审核分流
 - 报名安全确认、名额校验、满员候补、取消报名与候补递补
-- 扫码与位置签到演示、兴趣小队、群聊、个人中心
+- 扫码签到、活动总结/评价接口、好友关注、兴趣小队、群聊、个人中心
 - 后台审核、用户封禁/解封、商家任务、活动下架/恢复、小队停用/恢复
-- Spring Boot 活动查询、创建、报名、取消和候补递补接口
+- Spring Boot + MySQL 活动查询、创建、报名、取消、候补递补、后台治理和第三方降级日志接口
 
-当前版本使用内存与浏览器 LocalStorage 保存演示数据，重启后后端数据会恢复；生产环境可在 service 层接入数据库而不改变现有接口。
+当前版本使用本机 MySQL 的项目库 `quju_dev` 持久化数据；Flyway 负责建表和种子数据迁移。前端不再直接读取 `mock/data`。
 
 ## 环境要求
 
@@ -20,25 +20,40 @@
 - npm 9+
 - JDK 8+
 - Maven 3.6+
+- MySQL 8.x
 
 ## 启动项目
+
+首次初始化 MySQL：
+
+```bash
+mysql -u root -p < backend/db/init-mysql.sql
+```
 
 打开两个终端，先启动后端：
 
 ```powershell
-cd "E:\Desktop\大三下\小学期\quju-platform\backend"
-$env:JAVA_HOME="E:\MyJava\jdk"
-$env:Path="$env:JAVA_HOME\bin;$env:Path"
-mvn spring-boot:run
+cd backend
+JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home \
+mvn -Dmaven.repo.local=../.m2/repository spring-boot:run
 ```
 
 再启动前端：
 
 ```powershell
-cd "E:\Desktop\大三下\小学期\quju-platform\frontend"
-npm install
-npm run dev
+cd frontend
+npm --cache ../.npm ci
+npm --cache ../.npm run dev
 ```
+
+真实第三方集成通过环境变量或未提交的 `backend/src/main/resources/application-local.yml` 配置：
+
+- 高德：`QUJU_AMAP_WEB_SERVICE_KEY`
+- SMTP：`QUJU_SMTP_HOST`、`QUJU_SMTP_PORT`、`QUJU_SMTP_USERNAME`、`QUJU_SMTP_PASSWORD`、`QUJU_MAIL_FROM`
+- OpenAI-compatible：`QUJU_AI_BASE_URL`、`QUJU_AI_API_KEY`、`QUJU_AI_MODEL`
+- S3-compatible：`QUJU_S3_ENDPOINT`、`QUJU_S3_REGION`、`QUJU_S3_BUCKET`、`QUJU_S3_ACCESS_KEY`、`QUJU_S3_SECRET_KEY`、`QUJU_S3_PUBLIC_BASE_URL`
+
+未配置第三方时，本地开发仍可运行：邮件写入 outbox，地图/AI/S3 走明确降级并记录 `third_party_events`。
 
 访问地址：
 
@@ -47,24 +62,34 @@ npm run dev
 - 运营后台：http://localhost:5173/admin
 - 后端 API：http://localhost:8080/api
 
+默认账号：
+
+- 普通用户：`demo@quju.cn` / `12345678`
+- 管理员：`admin@quju.cn` / `Admin123456`
+
 ## 构建和测试
 
 ```powershell
-cd "E:\Desktop\大三下\小学期\quju-platform\frontend"
-npm run build
+cd frontend
+npm --cache ../.npm ci
+npm --cache ../.npm run build
 
-cd "E:\Desktop\大三下\小学期\quju-platform\backend"
-$env:JAVA_HOME="E:\MyJava\jdk"
-$env:Path="$env:JAVA_HOME\bin;$env:Path"
-mvn test
+cd ../backend
+JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home \
+mvn -Dmaven.repo.local=../.m2/repository test
 ```
 
 ## 主要 API
 
-- `GET /api/activities`：活动列表，可传 `keyword`、`category`
+- `GET /api/activities`：活动列表，可传 `keyword`、`category/categories`、`city`、`fee`、`time`、`distance`、`bounds`、`sort`、`page/size`
 - `GET /api/activities/{id}`：活动详情
-- `POST /api/activities`：创建活动；人数超过 50 自动进入人工审核
-- `POST /api/activities/{id}/registrations?userId=...`：报名或加入候补
-- `DELETE /api/activities/{id}/registrations/{userId}`：取消并自动递补候补首位
+- `POST /api/activities`：创建活动，用户从 `Authorization: Bearer <token>` 获取；人数超过 50 或 AI 风险进入人工审核
+- `GET /api/activities/registrations/me`：当前用户报名/候补状态
+- `POST /api/activities/{id}/registrations`：当前用户报名或加入候补
+- `DELETE /api/activities/{id}/registrations/me`：当前用户取消并自动递补候补首位
+- `POST /api/checkins/scan`：扫码签到
+- `PUT /api/users/me`：更新个人资料
+- `POST /api/files/upload`：上传头像、资质、图片或群文件
+- `GET /api/conversations`、`POST /api/conversations/{id}/messages`、`/api/ws`：消息和 WebSocket
 - `POST /api/ai/plans`：生成活动策划方案
-- `GET /api/admin/dashboard`：运营数据概览
+- `GET /api/admin/dashboard`：运营数据概览，管理员 Token 必填
