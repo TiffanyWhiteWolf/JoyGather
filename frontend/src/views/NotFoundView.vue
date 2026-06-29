@@ -1,0 +1,2 @@
+<template><div class="not-found"><b>404</b><h1>这条城市小路还没开放</h1><p>可能是地址写错了，回到首页继续发现吧。</p><RouterLink to="/" class="btn btn-primary">返回趣聚首页</RouterLink></div></template>
+<style scoped>.not-found{min-height:100vh;display:grid;place-content:center;text-align:center;background:var(--color-bg)}b{font-size:100px;color:var(--color-primary);line-height:1}h1{margin:20px 0 8px}p{color:var(--color-ink-soft)}.btn{margin:auto}</style>

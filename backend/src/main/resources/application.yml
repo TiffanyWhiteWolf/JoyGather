@@ -1,0 +1,13 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+spring:
+  application:
+    name: quju-backend
+  jackson:
+    default-property-inclusion: non_null
+    time-zone: Asia/Shanghai
+logging:
+  level:
+    com.quju: info
