@@ -1,7 +1,10 @@
 package com.quju.service;
 
 import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -44,6 +47,26 @@ final class DbSupport {
         LocalDateTime value = timestamp.toLocalDateTime();
         return DATE_TIME.format(value);
     }
+
+    static String relativeTime(Timestamp timestamp) {
+        if (timestamp == null) return "";
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime then = timestamp.toLocalDateTime();
+        Duration d = Duration.between(then, now);
+        long seconds = d.getSeconds();
+        if (seconds < 60) return "刚刚";
+        if (seconds < 3600) return (seconds / 60) + "分钟前";
+        if (seconds < 86400) {
+            LocalDate today = now.toLocalDate();
+            LocalDate thenDate = then.toLocalDate();
+            if (thenDate.equals(today)) return "今天 " + then.toLocalTime().format(LocalTimeFormatter);
+            if (thenDate.equals(today.minusDays(1))) return "昨天 " + then.toLocalTime().format(LocalTimeFormatter);
+        }
+        return then.toLocalDate().format(DateFormatter) + " " + then.toLocalTime().format(LocalTimeFormatter);
+    }
+
+    private static final DateTimeFormatter LocalTimeFormatter = DateTimeFormatter.ofPattern("HH:mm");
+    private static final DateTimeFormatter DateFormatter = DateTimeFormatter.ofPattern("MM-dd");
 
     static String safe(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();

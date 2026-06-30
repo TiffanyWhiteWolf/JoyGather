@@ -18,6 +18,7 @@ const router = createRouter({
         { path: 'check-in', name: 'check-in', component: () => import('@/views/user/CheckInView.vue') },
         { path: 'teams', name: 'teams', component: () => import('@/views/user/TeamsView.vue') },
         { path: 'messages', name: 'messages', component: () => import('@/views/user/MessagesView.vue') },
+        { path: 'friends', redirect: '/messages' },
         { path: 'profile', name: 'profile', component: () => import('@/views/user/ProfileView.vue') },
       ],
     },

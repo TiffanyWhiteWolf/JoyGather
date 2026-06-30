@@ -67,11 +67,23 @@ public class SocialController {
         return ApiResponse.success(null);
     }
 
+    @DeleteMapping("/friends/{id}")
+    public ApiResponse<Void> removeFriend(@PathVariable String id,
+                                          @RequestHeader(value = "Authorization", required = false) String authorization) {
+        socialService.removeFriend(userService.requireToken(authorization).getId(), id);
+        return ApiResponse.success(null);
+    }
+
     @PostMapping("/follows/{id}")
     public ApiResponse<Void> follow(@PathVariable String id,
                                     @RequestHeader(value = "Authorization", required = false) String authorization) {
         socialService.follow(userService.requireToken(authorization).getId(), id);
         return ApiResponse.success(null);
+    }
+
+    @GetMapping("/follows/me")
+    public ApiResponse<List<String>> myFollows(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        return ApiResponse.success(socialService.followedUserIds(userService.requireToken(authorization).getId()));
     }
 
     @DeleteMapping("/follows/{id}")
@@ -86,6 +98,30 @@ public class SocialController {
                                    @RequestBody(required = false) CommonDtos.GenericRequest request,
                                    @RequestHeader(value = "Authorization", required = false) String authorization) {
         socialService.block(userService.requireToken(authorization).getId(), id, request == null ? "" : request.getReason());
+        return ApiResponse.success(null);
+    }
+
+    @DeleteMapping("/blocks/{id}")
+    public ApiResponse<Void> unblock(@PathVariable String id,
+                                     @RequestHeader(value = "Authorization", required = false) String authorization) {
+        socialService.unblock(userService.requireToken(authorization).getId(), id);
+        return ApiResponse.success(null);
+    }
+
+    @GetMapping("/blocks/me")
+    public ApiResponse<List<String>> myBlocks(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        return ApiResponse.success(socialService.blockedUserIds(userService.requireToken(authorization).getId()));
+    }
+
+    @GetMapping("/notifications")
+    public ApiResponse<List<Map<String, Object>>> notifications(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        return ApiResponse.success(socialService.notifications(userService.requireToken(authorization).getId()));
+    }
+
+    @PutMapping("/notifications/{id}/read")
+    public ApiResponse<Void> markNotificationRead(@PathVariable String id,
+                                                  @RequestHeader(value = "Authorization", required = false) String authorization) {
+        socialService.markNotificationRead(id, userService.requireToken(authorization).getId());
         return ApiResponse.success(null);
     }
 }

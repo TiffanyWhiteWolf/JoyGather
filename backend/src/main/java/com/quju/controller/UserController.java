@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 @RestController
 @RequestMapping("/users")
 public class UserController {
@@ -40,5 +43,15 @@ public class UserController {
                                                 @RequestBody CommonDtos.MerchantApplicationRequest request) {
         userService.submitMerchantApplication(authorization, request);
         return ApiResponse.success(null);
+    }
+
+    @GetMapping("/search")
+    public ApiResponse<List<UserDto>> search(@RequestParam String q,
+                                             @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto current = userService.optionalToken(authorization);
+        String currentId = current == null ? null : current.getId();
+        return ApiResponse.success(userService.search(q, "", "正常").stream()
+                .filter(u -> !u.getId().equals(currentId))
+                .collect(Collectors.toList()));
     }
 }

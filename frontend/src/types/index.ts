@@ -56,6 +56,30 @@ export interface Activity {
   updatedAt?: string
 }
 
+export interface Friend {
+  userId: string
+  nickname: string
+  avatar: string
+  city: string
+  bio?: string
+  interests?: string
+  remark?: string
+  groupName?: string
+}
+
+export interface FriendRequest {
+  id: string
+  requesterId: string
+  receiverId: string
+  source: string
+  message: string
+  status: '待处理' | '已通过' | '已拒绝'
+  createdAt: string
+  handledAt?: string
+  requesterNickname: string
+  requesterAvatar: string
+}
+
 export interface Team {
   id: string
   name: string
@@ -122,6 +146,7 @@ export interface Message {
   mine: boolean
   read: boolean
   recalled?: boolean
+  senderAvatar?: string
 }
 
 export interface Conversation {
@@ -133,5 +158,8 @@ export interface Conversation {
   lastMessage: string
   lastTime: string
   online?: boolean
+  pinned?: boolean
+  muted?: boolean
+  friendUserId?: string
   messages: Message[]
 }
