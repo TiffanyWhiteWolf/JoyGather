@@ -135,3 +135,47 @@ export interface Conversation {
   online?: boolean
   messages: Message[]
 }
+
+export interface SummaryImage {
+  url: string
+  aiCategory: string
+  confirmedCategory: string
+}
+
+export interface ActivitySummary {
+  id: string
+  activityId: string
+  authorId: string
+  authorName: string
+  authorAvatar: string
+  title: string
+  content: string
+  imageUrls: string[]
+  categories: string[]
+  images: SummaryImage[]
+  createdAt: string
+}
+
+export interface ActivityReview {
+  id: string
+  userId: string
+  nickname: string
+  avatar: string
+  rating: number
+  content: string
+  createdAt: string
+  mine: boolean
+}
+
+export interface ActivityAfterEvent {
+  summary?: ActivitySummary
+  reviews: ActivityReview[]
+  averageRating: number
+  reviewCount: number
+  canPublishSummary: boolean
+  canReview: boolean
+  reviewExpired: boolean
+  reviewDeadline?: string
+  eligibilityMessage: string
+  myReview?: ActivityReview
+}

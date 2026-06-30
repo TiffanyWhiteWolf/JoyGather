@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { LocateFixed, MapPin } from 'lucide-vue-next'
+import { ArrowUpRight, CalendarDays, LocateFixed, MapPin } from 'lucide-vue-next'
 import L, { type LatLngBounds, type Map as LeafletMap, type Marker } from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import type { Activity } from '@/types'
+import { formatPrice } from '@/lib/utils'
 
-const props = defineProps<{ activities: Activity[]; compact?: boolean }>()
+const props = defineProps<{ activities: Activity[]; compact?: boolean; loading?: boolean }>()
 const emit = defineEmits<{
   'bounds-change': [bounds: { minLng: number; maxLng: number; minLat: number; maxLat: number }]
 }>()
@@ -15,6 +16,7 @@ const selected = ref<Activity | null>(null)
 const mapError = ref('')
 let map: LeafletMap | null = null
 let markers: Marker[] = []
+let hasFittedInitialActivities = false
 
 function toBounds(bounds: LatLngBounds) {
   const west = bounds.getWest()
@@ -48,10 +50,12 @@ function refreshMarkers() {
       .on('click', () => { selected.value = activity })
     markers.push(marker)
   })
-  if (props.activities.length && markers.length && !props.compact) {
+  if (props.activities.length && markers.length && !props.compact && !hasFittedInitialActivities) {
+    hasFittedInitialActivities = true
     const group = L.featureGroup(markers)
     map.fitBounds(group.getBounds().pad(0.2), { maxZoom: 14 })
   }
+  if (selected.value && !props.activities.some(item => item.id === selected.value?.id)) selected.value = null
 }
 
 function locateMe() {
@@ -77,7 +81,7 @@ onMounted(async () => {
   })
     .on('tileerror', () => { mapError.value = '地图服务暂不可用，已保留活动列表和手动筛选入口。' })
     .addTo(map)
-  map.on('moveend zoomend', () => { if (map) toBounds(map.getBounds()) })
+  map.on('moveend', () => { if (map) toBounds(map.getBounds()) })
   refreshMarkers()
   setTimeout(() => map?.invalidateSize(), 50)
 })
@@ -96,13 +100,12 @@ onBeforeUnmount(() => {
     <div ref="mapEl" class="leaflet-host"></div>
     <button class="locate-btn" type="button" @click="locateMe"><LocateFixed :size="17" />定位到我</button>
     <div class="map-legend"><span></span>{{ activities.length }} 场活动在当前范围</div>
+    <div v-if="loading" class="map-loading"><i></i>正在刷新当前区域活动</div>
     <div v-if="mapError" class="map-error">{{ mapError }}</div>
     <RouterLink v-if="selected" class="map-summary" :to="`/activities/${selected.id}`">
       <img :src="selected.cover" :alt="selected.title" />
-      <span>
-        <b>{{ selected.title }}</b>
-        <small><MapPin :size="13" />{{ selected.district }} · {{ selected.location }}</small>
-      </span>
+      <span class="summary-copy"><em>{{ selected.category }} · {{ formatPrice(selected.price) }}</em><b>{{ selected.title }}</b><small><CalendarDays :size="13" />{{ selected.date }} {{ selected.time.split(' - ')[0] }}</small><small><MapPin :size="13" />{{ selected.district }} · {{ selected.location }}</small></span>
+      <span class="summary-go">查看详情<ArrowUpRight :size="15" /></span>
     </RouterLink>
   </div>
 </template>
@@ -111,16 +114,19 @@ onBeforeUnmount(() => {
 .real-map{position:relative;z-index:0;isolation:isolate;min-height:600px;overflow:hidden;border:1px solid #dfe3db;border-radius:var(--radius-lg);background:#e9ece7}
 .real-map.compact{min-height:390px}
 .leaflet-host{position:absolute;z-index:0;inset:0}
-.locate-btn,.map-legend,.map-error,.map-summary{position:absolute;z-index:20;background:#fff;border:0;border-radius:var(--radius-pill);box-shadow:var(--shadow-soft);display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700}
+.locate-btn,.map-legend,.map-error,.map-loading,.map-summary{position:absolute;z-index:20;background:#fff;border:0;border-radius:var(--radius-pill);box-shadow:var(--shadow-soft);display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700}
 .locate-btn{right:18px;top:18px;padding:10px 14px}
 .map-legend{left:18px;bottom:18px;padding:10px 14px}
 .map-legend span{width:8px;height:8px;background:var(--color-primary);border-radius:50%}
 .map-error{left:18px;right:18px;top:18px;padding:10px 14px;border-radius:10px;color:var(--color-danger);font-weight:700}
-.map-summary{left:18px;right:18px;bottom:64px;padding:10px;border-radius:12px;color:var(--color-ink)}
-.map-summary img{width:62px;height:48px;border-radius:8px;object-fit:cover}
-.map-summary span{min-width:0;display:flex;flex-direction:column;gap:5px}
+.map-loading{left:50%;top:18px;transform:translateX(-50%);padding:9px 13px;color:var(--color-primary)}.map-loading i{width:11px;height:11px;border:2px solid var(--color-primary-soft);border-top-color:var(--color-primary);border-radius:50%;animation:map-spin .8s linear infinite}@keyframes map-spin{to{rotate:360deg}}
+.map-summary{left:18px;right:18px;bottom:64px;padding:12px;border-radius:16px;color:var(--color-ink);transition:.2s}.map-summary:hover{transform:translateY(-2px);box-shadow:var(--shadow-card)}
+.map-summary img{width:92px;height:82px;border-radius:11px;object-fit:cover}
+.map-summary .summary-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}
+.map-summary em{color:var(--color-primary);font-size:9px;font-style:normal;font-weight:800}
 .map-summary b{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .map-summary small{display:flex;align-items:center;gap:4px;color:var(--color-ink-soft);font-size:10px}
+.summary-go{margin-left:auto;color:var(--color-primary);display:flex;align-items:center;gap:3px;white-space:nowrap;font-size:10px}
 :global(.quju-marker){width:34px!important;height:34px!important;border:3px solid #fff;background:var(--color-primary);color:#fff;border-radius:50% 50% 50% 8px;box-shadow:0 8px 18px rgba(23,34,56,.24);display:grid;place-items:center;transform:rotate(-45deg)}
 :global(.quju-marker span){display:grid;place-items:center;width:100%;height:100%;font-size:10px;font-weight:900;transform:rotate(45deg)}
 :global(.leaflet-control-attribution){font-size:9px}

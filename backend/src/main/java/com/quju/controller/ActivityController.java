@@ -162,13 +162,30 @@ public class ActivityController {
         return ApiResponse.success(activityService.publishSummary(id, userId, request));
     }
 
-    @PostMapping("/{id}/reviews")
-    public ApiResponse<Void> review(@PathVariable String id,
-                                    @RequestBody ActivityOpsDtos.ReviewRequest request,
-                                    @RequestHeader(value = "Authorization", required = false) String authorization) {
+    @PostMapping("/{id}/summaries/classify")
+    public ApiResponse<ActivityOpsDtos.SummaryClassificationDto> classifySummaryImages(
+            @PathVariable String id,
+            @RequestBody ActivityOpsDtos.SummaryClassifyRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
         String userId = userService.requireToken(authorization).getId();
-        activityService.reviewActivity(id, userId, request);
-        return ApiResponse.success(null);
+        return ApiResponse.success(activityService.classifySummaryImages(id, userId, request));
+    }
+
+    @GetMapping("/{id}/after-event")
+    public ApiResponse<ActivityOpsDtos.AfterEventDto> afterEvent(
+            @PathVariable String id,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = authorization == null || authorization.trim().isEmpty()
+                ? null : userService.requireToken(authorization).getId();
+        return ApiResponse.success(activityService.afterEvent(id, userId));
+    }
+
+    @PostMapping("/{id}/reviews")
+    public ApiResponse<ActivityOpsDtos.ReviewDto> review(@PathVariable String id,
+                                                         @RequestBody ActivityOpsDtos.ReviewRequest request,
+                                                         @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        return ApiResponse.success(activityService.reviewActivity(id, userId, request));
     }
 
     @PostMapping("/checkins/scan")

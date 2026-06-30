@@ -160,6 +160,20 @@ public abstract class TestBase {
                 + "id varchar(64) primary key, actor_id varchar(64), action varchar(80),"
                 + "target_type varchar(80), target_id varchar(64), reason varchar(1000),"
                 + "created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table activity_summaries ("
+                + "id varchar(64) primary key, activity_id varchar(64), author_id varchar(64),"
+                + "title varchar(180), content varchar(4000), status varchar(32) default '已发布',"
+                + "created_at timestamp default current_timestamp, updated_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table summary_images ("
+                + "id varchar(64) primary key, summary_id varchar(64), file_id varchar(64), url varchar(700),"
+                + "ai_category varchar(80), confirmed_category varchar(80), rank_order int)");
+
+        jdbc.execute("create table activity_reviews_user ("
+                + "id varchar(64) primary key, activity_id varchar(64), user_id varchar(64), rating int,"
+                + "content varchar(1000), created_at timestamp default current_timestamp,"
+                + "unique(activity_id,user_id))");
     }
 
     // -------------------------------------------------------

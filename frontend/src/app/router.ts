@@ -11,6 +11,7 @@ const router = createRouter({
       path: '/', component: AppShell, children: [
         { path: '', name: 'home', component: () => import('@/views/user/HomeView.vue') },
         { path: 'discover', name: 'discover', component: () => import('@/views/user/DiscoverView.vue') },
+        { path: 'activities/:id/after-event', name: 'activity-after-event', component: () => import('@/views/user/ActivityAfterEventView.vue') },
         { path: 'activities/:id', name: 'activity-detail', component: () => import('@/views/user/ActivityDetailView.vue') },
         { path: 'create', name: 'create', component: () => import('@/views/user/CreateActivityView.vue') },
         { path: 'drafts', name: 'drafts', component: () => import('@/views/user/DraftsView.vue') },
