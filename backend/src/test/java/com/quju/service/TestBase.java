@@ -18,6 +18,7 @@ public abstract class TestBase {
     protected UserService userService;
     protected ActivityService activityService;
     protected AdminService adminService;
+    protected TeamService teamService;
 
     protected static final String ADMIN_ID = "u-admin";
     protected static final String ADMIN_EMAIL = "admin@quju.cn";
@@ -38,6 +39,7 @@ public abstract class TestBase {
         userService = new UserService(jdbc);
         activityService = new ActivityService(jdbc, userService);
         adminService = new AdminService(jdbc, activityService, userService);
+        teamService = new TeamService(jdbc);
     }
 
     // -------------------------------------------------------
@@ -156,6 +158,60 @@ public abstract class TestBase {
                 + "submitted_at timestamp default current_timestamp, status varchar(32),"
                 + "handled_at timestamp, handler_id varchar(64), handler_reason varchar(1000))");
 
+        jdbc.execute("create table teams ("
+                + "id varchar(64) primary key, name varchar(120), description varchar(1000),"
+                + "cover varchar(500), tags varchar(1000), members_count int, capacity int,"
+                + "join_mode varchar(32), active_now int, status varchar(32) default '正常',"
+                + "stop_reason varchar(1000), owner_id varchar(64),"
+                + "created_at timestamp default current_timestamp, updated_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_members ("
+                + "team_id varchar(64), user_id varchar(64), role varchar(32), status varchar(32) default '正常',"
+                + "joined_at timestamp default current_timestamp, primary key(team_id, user_id))");
+
+        jdbc.execute("create table team_announcements ("
+                + "id varchar(64) primary key, team_id varchar(64), author_id varchar(64),"
+                + "content varchar(1000), mention_all boolean, created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_polls ("
+                + "id varchar(64) primary key, team_id varchar(64), author_id varchar(64),"
+                + "title varchar(180), status varchar(32) default '进行中', created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_poll_options ("
+                + "id varchar(64) primary key, poll_id varchar(64), text varchar(180), rank_order int)");
+
+        jdbc.execute("create table files ("
+                + "id varchar(64) primary key, owner_id varchar(64), original_name varchar(255),"
+                + "content_type varchar(120), size_bytes bigint, url varchar(700), storage_key varchar(500),"
+                + "provider varchar(40), created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_files ("
+                + "id varchar(64) primary key, team_id varchar(64), file_id varchar(64),"
+                + "uploader_id varchar(64), created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_albums ("
+                + "id varchar(64) primary key, team_id varchar(64), file_id varchar(64),"
+                + "uploader_id varchar(64), url varchar(700), caption varchar(1000),"
+                + "created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_points ("
+                + "team_id varchar(64), user_id varchar(64), points int,"
+                + "updated_at timestamp default current_timestamp, primary key(team_id, user_id))");
+
+        jdbc.execute("create table team_reports ("
+                + "id varchar(64) primary key, team_id varchar(64), reporter_id varchar(64),"
+                + "reason varchar(1000), status varchar(32), created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table conversations ("
+                + "id varchar(64) primary key, name varchar(120), avatar varchar(500), type varchar(32),"
+                + "team_id varchar(64), friend_user_id varchar(64), unread int default 0,"
+                + "last_message varchar(1000), last_time varchar(40), online boolean default false)");
+
+        jdbc.execute("create table conversation_participants ("
+                + "conversation_id varchar(64), user_id varchar(64), last_read_at timestamp,"
+                + "muted boolean default false, pinned boolean default false,"
+                + "primary key(conversation_id, user_id))");
+
         jdbc.execute("create table audit_logs ("
                 + "id varchar(64) primary key, actor_id varchar(64), action varchar(80),"
                 + "target_type varchar(80), target_id varchar(64), reason varchar(1000),"
@@ -174,17 +230,6 @@ public abstract class TestBase {
                 + "id varchar(64) primary key, activity_id varchar(64), user_id varchar(64), rating int,"
                 + "content varchar(1000), created_at timestamp default current_timestamp,"
                 + "unique(activity_id,user_id))");
-
-        jdbc.execute("create table teams ("
-                + "id varchar(64) primary key, name varchar(120), description varchar(1000),"
-                + "cover varchar(500), tags varchar(1000), members_count int, capacity int,"
-                + "join_mode varchar(32), active_now int, status varchar(32), stop_reason varchar(1000),"
-                + "owner_id varchar(64), created_at timestamp default current_timestamp,"
-                + "updated_at timestamp default current_timestamp)");
-
-        jdbc.execute("create table team_members ("
-                + "team_id varchar(64), user_id varchar(64), role varchar(32), status varchar(32),"
-                + "joined_at timestamp default current_timestamp, primary key(team_id, user_id))");
 
         jdbc.execute("create table follows ("
                 + "follower_id varchar(64), followee_id varchar(64), created_at timestamp default current_timestamp,"
