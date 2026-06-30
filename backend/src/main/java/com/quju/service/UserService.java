@@ -100,7 +100,7 @@ public class UserService {
         if (!passwordMatches(request.getPassword(), record.passwordHash)) throw new IllegalStateException("邮箱或密码错误");
         if (!record.activated) throw new IllegalStateException("请先激活账号");
         if ("已封禁".equals(record.status) && !banExpired(record.banUntil)) {
-            throw new IllegalStateException("账号已被封禁：" + DbSupport.safe(record.banReason, "未填写原因"));
+            throw new IllegalStateException(banMessage(record.banReason, record.banUntil));
         }
         if ("已封禁".equals(record.status) && banExpired(record.banUntil)) {
             jdbc.update("update users set status = '正常', ban_reason = null, ban_until = null where id = ?", record.user.getId());
@@ -137,8 +137,12 @@ public class UserService {
         if (authorization == null || !authorization.startsWith("Bearer ")) throw new IllegalStateException("请先登录");
         String token = authorization.substring("Bearer ".length()).trim();
         try {
-            return jdbc.queryForObject("select u.* from users u join sessions s on s.user_id = u.id where s.token = ? and s.expires_at > now()",
+            UserDto user = jdbc.queryForObject("select u.* from users u join sessions s on s.user_id = u.id where s.token = ? and s.expires_at > now()",
                     userMapper(), token);
+            if ("已封禁".equals(user.getStatus()) && !banExpired(user.getBanUntil())) {
+                throw new IllegalStateException(banMessage(user.getBanReason(), user.getBanUntil()));
+            }
+            return user;
         } catch (EmptyResultDataAccessException ex) {
             throw new IllegalStateException("登录已过期，请重新登录");
         }
@@ -306,6 +310,19 @@ public class UserService {
 
     private boolean banExpired(Date banUntil) {
         return banUntil != null && banUntil.toLocalDate().isBefore(LocalDate.now());
+    }
+
+    private boolean banExpired(String banUntil) {
+        return banUntil != null && Date.valueOf(banUntil).toLocalDate().isBefore(LocalDate.now());
+    }
+
+    private String banMessage(String reason, Date banUntil) {
+        String until = banUntil == null ? "未设置期限" : banUntil.toString();
+        return "账号已被封禁：" + DbSupport.safe(reason, "未填写原因") + "；封禁至：" + until;
+    }
+
+    private String banMessage(String reason, String banUntil) {
+        return "账号已被封禁：" + DbSupport.safe(reason, "未填写原因") + "；封禁至：" + DbSupport.safe(banUntil, "未设置期限");
     }
 
     private String emptyFilter(String value) {
