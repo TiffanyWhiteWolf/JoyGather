@@ -173,6 +173,7 @@ export interface Message {
   latitude?: number
   longitude?: number
   time: string
+  sentAt?: string
   mine: boolean
   read: boolean
   recalled?: boolean

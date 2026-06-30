@@ -82,18 +82,7 @@ public class MessageService {
     public MessageDtos.MessageDto send(String conversationId, String senderId, MessageDtos.SendMessageRequest request) {
         requireParticipant(conversationId, senderId);
         requireOpenConversation(conversationId);
-        // 好友会话需要检查是否仍是好友
-        String convType = jdbc.queryForObject("select type from conversations where id = ?", String.class, conversationId);
-        if ("好友".equals(convType) && !isWelcomeConversation(conversationId)) {
-            List<String> others = jdbc.queryForList(
-                "select user_id from conversation_participants where conversation_id = ? and user_id != ?",
-                String.class, conversationId, senderId);
-            if (!others.isEmpty()) {
-                String other = others.get(0);
-                Integer fc = jdbc.queryForObject("select count(*) from friendships where user_id = ? and friend_id = ?", Integer.class, senderId, other);
-                if (fc == null || fc == 0) throw new IllegalStateException("你们还不是好友，不能发送消息");
-            }
-        }
+        requireActiveRelationship(conversationId, senderId);
         if (request == null) throw new IllegalStateException("消息内容不能为空");
         String type = DbSupport.safe(request.getType(), "TEXT");
         String content = DbSupport.safe(request.getContent(), "");
@@ -142,8 +131,8 @@ public class MessageService {
         if (rows.isEmpty()) throw new java.util.NoSuchElementException("消息不存在");
         java.util.Map<String, Object> row = rows.get(0);
         if (!userId.equals(String.valueOf(row.get("sender_id")))) throw new IllegalStateException("只能撤回自己发送的消息");
-        Timestamp sentAt = (Timestamp) row.get("sent_at");
-        if (sentAt != null && sentAt.toLocalDateTime().isBefore(LocalDateTime.now().minusMinutes(2))) throw new IllegalStateException("消息发送超过 2 分钟，不能撤回");
+        LocalDateTime sentAt = toLocalDateTime(row.get("sent_at"));
+        if (sentAt != null && sentAt.isBefore(LocalDateTime.now().minusMinutes(2))) throw new IllegalStateException("消息发送超过 2 分钟，不能撤回");
         jdbc.update("update messages set recalled = 1, recalled_at = now(), content = '消息已撤回' where id = ?", messageId);
     }
 
@@ -153,11 +142,14 @@ public class MessageService {
         List<java.util.Map<String, Object>> rows = jdbc.queryForList("select * from messages where id = ?", messageId);
         if (rows.isEmpty()) throw new java.util.NoSuchElementException("消息不存在");
         java.util.Map<String, Object> row = rows.get(0);
+        if (isTruthy(row.get("recalled"))) throw new IllegalStateException("已撤回的消息不能转发");
         requireParticipant(String.valueOf(row.get("conversation_id")), userId);
         MessageDtos.SendMessageRequest request = new MessageDtos.SendMessageRequest();
         request.setContent(String.valueOf(row.get("content")));
         request.setType(String.valueOf(row.get("message_type")));
         request.setMediaUrl((String) row.get("media_url"));
+        request.setLatitude(row.get("location_lat") == null ? null : ((Number) row.get("location_lat")).doubleValue());
+        request.setLongitude(row.get("location_lng") == null ? null : ((Number) row.get("location_lng")).doubleValue());
         MessageDtos.MessageDto created = send(targetConversationId, userId, request);
         jdbc.update("update messages set forwarded_from_id = ? where id = ?", messageId, created.getId());
         return created;
@@ -196,6 +188,7 @@ public class MessageService {
                 item.setLatitude(rs.getObject("location_lat") == null ? null : rs.getDouble("location_lat"));
                 item.setLongitude(rs.getObject("location_lng") == null ? null : rs.getDouble("location_lng"));
                 item.setTime(DbSupport.formatTime(rs.getTimestamp("sent_at")));
+                item.setSentAt(rs.getTimestamp("sent_at") == null ? null : rs.getTimestamp("sent_at").toInstant().toString());
                 item.setMine(currentUserId != null && currentUserId.equals(rs.getString("sender_id")));
                 item.setRead(rs.getBoolean("read_flag"));
                 item.setRecalled(rs.getBoolean("recalled"));
@@ -215,8 +208,42 @@ public class MessageService {
         if (count != null && count > 0) throw new IllegalStateException("小队已解散，群聊停止使用");
     }
 
+    private void requireActiveRelationship(String conversationId, String userId) {
+        List<Map<String, Object>> conversations = jdbc.queryForList("select type, team_id from conversations where id = ?", conversationId);
+        if (conversations.isEmpty()) throw new java.util.NoSuchElementException("会话不存在");
+        Map<String, Object> conversation = conversations.get(0);
+        String type = String.valueOf(conversation.get("type"));
+        Object teamId = conversation.get("team_id");
+        if ("好友".equals(type) && !isWelcomeConversation(conversationId)) {
+            List<String> others = jdbc.queryForList(
+                    "select user_id from conversation_participants where conversation_id = ? and user_id != ?",
+                    String.class, conversationId, userId);
+            if (others.isEmpty()) throw new IllegalStateException("非好友且非同队关系不可发送消息");
+            Integer count = jdbc.queryForObject("select count(*) from friendships where user_id = ? and friend_id = ?", Integer.class, userId, others.get(0));
+            if (count == null || count == 0) throw new IllegalStateException("你们还不是好友，不能发送消息");
+        }
+        if (teamId != null) {
+            Integer count = jdbc.queryForObject("select count(*) from team_members where team_id = ? and user_id = ?", Integer.class, String.valueOf(teamId), userId);
+            if (count == null || count == 0) throw new IllegalStateException("非好友且非同队关系不可发送消息");
+        }
+    }
+
     private boolean isWelcomeConversation(String conversationId) {
         return conversationId != null && conversationId.startsWith("welcome-");
+    }
+
+    private boolean isTruthy(Object value) {
+        if (value instanceof Boolean) return (Boolean) value;
+        if (value instanceof Number) return ((Number) value).intValue() != 0;
+        return value != null && Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    private LocalDateTime toLocalDateTime(Object value) {
+        if (value == null) return null;
+        if (value instanceof LocalDateTime) return (LocalDateTime) value;
+        if (value instanceof Timestamp) return ((Timestamp) value).toLocalDateTime();
+        if (value instanceof java.util.Date) return new Timestamp(((java.util.Date) value).getTime()).toLocalDateTime();
+        return LocalDateTime.parse(String.valueOf(value).replace(' ', 'T'));
     }
 
     private void validateLocation(Double latitude, Double longitude) {

@@ -58,6 +58,7 @@ public class MessageDtos {
         private Boolean read;
         private Boolean recalled;
         private String senderAvatar;
+        private String sentAt;
         public String getId() { return id; }
         public void setId(String id) { this.id = id; }
         public String getSenderId() { return senderId; }
@@ -82,6 +83,8 @@ public class MessageDtos {
         public void setRecalled(Boolean recalled) { this.recalled = recalled; }
         public String getSenderAvatar() { return senderAvatar; }
         public void setSenderAvatar(String senderAvatar) { this.senderAvatar = senderAvatar; }
+        public String getSentAt() { return sentAt; }
+        public void setSentAt(String sentAt) { this.sentAt = sentAt; }
     }
 
     public static class SendMessageRequest {
