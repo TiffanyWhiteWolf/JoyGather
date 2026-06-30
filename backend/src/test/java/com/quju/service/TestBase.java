@@ -18,6 +18,7 @@ public abstract class TestBase {
     protected UserService userService;
     protected ActivityService activityService;
     protected AdminService adminService;
+    protected TeamService teamService;
 
     protected static final String ADMIN_ID = "u-admin";
     protected static final String ADMIN_EMAIL = "admin@quju.cn";
@@ -38,6 +39,7 @@ public abstract class TestBase {
         userService = new UserService(jdbc);
         activityService = new ActivityService(jdbc, userService);
         adminService = new AdminService(jdbc, activityService, userService);
+        teamService = new TeamService(jdbc);
     }
 
     // -------------------------------------------------------
@@ -178,6 +180,39 @@ public abstract class TestBase {
                 + "status varchar(32) default '待审核', reason varchar(1000),"
                 + "created_at timestamp default current_timestamp, handled_at timestamp, handler_id varchar(64))");
 
+        jdbc.execute("create table team_announcements ("
+                + "id varchar(64) primary key, team_id varchar(64), author_id varchar(64),"
+                + "content varchar(1000), mention_all boolean default false, created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_polls ("
+                + "id varchar(64) primary key, team_id varchar(64), author_id varchar(64),"
+                + "title varchar(180), status varchar(32) default '进行中', created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_poll_options ("
+                + "id varchar(64) primary key, poll_id varchar(64), text varchar(180), rank_order int)");
+
+        jdbc.execute("create table files ("
+                + "id varchar(64) primary key, owner_id varchar(64), original_name varchar(255),"
+                + "content_type varchar(120), size_bytes bigint, url varchar(700), storage_key varchar(500),"
+                + "provider varchar(40), created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_files ("
+                + "id varchar(64) primary key, team_id varchar(64), file_id varchar(64),"
+                + "uploader_id varchar(64), created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_albums ("
+                + "id varchar(64) primary key, team_id varchar(64), file_id varchar(64),"
+                + "uploader_id varchar(64), url varchar(700), caption varchar(1000),"
+                + "created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_points ("
+                + "team_id varchar(64), user_id varchar(64), points int,"
+                + "updated_at timestamp default current_timestamp, primary key(team_id, user_id))");
+
+        jdbc.execute("create table team_reports ("
+                + "id varchar(64) primary key, team_id varchar(64), reporter_id varchar(64),"
+                + "reason varchar(1000), status varchar(32), created_at timestamp default current_timestamp)");
+
         jdbc.execute("create table conversations ("
                 + "id varchar(64) primary key, name varchar(120), avatar varchar(500),"
                 + "type varchar(32), team_id varchar(64), friend_user_id varchar(64),"
@@ -196,29 +231,22 @@ public abstract class TestBase {
                 + "mine boolean default false, read_flag boolean default false, recalled boolean default false,"
                 + "recalled_at timestamp, forwarded_from_id varchar(64))");
 
-        jdbc.execute("create table team_announcements ("
-                + "id varchar(64) primary key, team_id varchar(64), author_id varchar(64),"
-                + "content varchar(1000), mention_all boolean default false, created_at timestamp default current_timestamp)");
+        jdbc.execute("create table follows ("
+                + "follower_id varchar(64), followee_id varchar(64), created_at timestamp default current_timestamp,"
+                + "primary key(follower_id, followee_id))");
 
-        jdbc.execute("create table team_polls ("
-                + "id varchar(64) primary key, team_id varchar(64), author_id varchar(64),"
-                + "title varchar(180), status varchar(32) default '进行中', created_at timestamp default current_timestamp)");
+        jdbc.execute("create table friendships ("
+                + "user_id varchar(64), friend_id varchar(64), remark varchar(100), group_name varchar(100),"
+                + "created_at timestamp default current_timestamp, primary key(user_id, friend_id))");
 
-        jdbc.execute("create table team_poll_options ("
-                + "id varchar(64) primary key, poll_id varchar(64), text varchar(180), rank_order int)");
+        jdbc.execute("create table friend_requests ("
+                + "id varchar(64) primary key, requester_id varchar(64), receiver_id varchar(64),"
+                + "source varchar(40), message varchar(1000), status varchar(32),"
+                + "created_at timestamp default current_timestamp, handled_at timestamp)");
 
-        jdbc.execute("create table team_files ("
-                + "id varchar(64) primary key, team_id varchar(64), file_id varchar(64),"
-                + "uploader_id varchar(64), created_at timestamp default current_timestamp)");
-
-        jdbc.execute("create table team_albums ("
-                + "id varchar(64) primary key, team_id varchar(64), file_id varchar(64),"
-                + "uploader_id varchar(64), url varchar(700), caption varchar(1000),"
-                + "created_at timestamp default current_timestamp)");
-
-        jdbc.execute("create table team_points ("
-                + "team_id varchar(64), user_id varchar(64), points int,"
-                + "updated_at timestamp default current_timestamp, primary key(team_id, user_id))");
+        jdbc.execute("create table user_blocks ("
+                + "user_id varchar(64), blocked_user_id varchar(64), reason varchar(1000),"
+                + "created_at timestamp default current_timestamp, primary key(user_id, blocked_user_id))");
     }
 
     // -------------------------------------------------------

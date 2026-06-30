@@ -4,6 +4,7 @@ import com.quju.common.ApiResponse;
 import com.quju.dto.CommonDtos;
 import com.quju.dto.UserDto;
 import com.quju.service.UserService;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -12,6 +13,9 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/users")
@@ -39,6 +43,18 @@ public class UserController {
     public ApiResponse<Void> merchantApplication(@RequestHeader(value = "Authorization", required = false) String authorization,
                                                 @RequestBody CommonDtos.MerchantApplicationRequest request) {
         userService.submitMerchantApplication(authorization, request);
+        return ApiResponse.success(null);
+    }
+
+    @GetMapping("/merchant-applications/me")
+    public ApiResponse<List<Map<String, Object>>> myMerchantApplications(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        return ApiResponse.success(userService.myMerchantApplications(authorization));
+    }
+
+    @DeleteMapping("/me")
+    public ApiResponse<Void> cancelMe(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                      @RequestBody CommonDtos.AccountCancellationRequest request) {
+        userService.cancelAccount(authorization, request);
         return ApiResponse.success(null);
     }
 }

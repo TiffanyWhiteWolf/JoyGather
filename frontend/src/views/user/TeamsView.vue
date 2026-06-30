@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, Crown, Search, Trash2, Trophy, UserPlus, Users } from 'lucide-vue-next'
+import { AlertTriangle, Crown, Search, Settings, Trash2, UserPlus, Users } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiGet, apiPost } from '@/lib/api'
@@ -61,7 +61,7 @@ function refreshCurrentUser() {
 }
 
 function isLeader(team: Team) {
-  return Boolean(team.ownerId && currentUserId.value && team.ownerId === currentUserId.value)
+  return team.myRole === '队长' || Boolean(team.ownerId && currentUserId.value && team.ownerId === currentUserId.value)
 }
 
 async function loadTeams() {
@@ -105,6 +105,10 @@ async function createTeam() {
   } finally {
     saving.value = false
   }
+}
+
+function manageTeam(team: Team) {
+  router.push(`/teams/${team.id}/manage`)
 }
 
 function openDissolve(team: Team) {
@@ -180,6 +184,7 @@ onMounted(loadTeams)
         <div class="my-actions">
           <button @click="goTeamChat(myTeam)">进入群聊</button>
           <button @click="findActivities(myTeam)">查看本周活动</button>
+          <button v-if="myTeam.myRole" class="btn-manage" @click="manageTeam(myTeam)"><Settings :size="14" />管理</button>
         </div>
       </div>
     </div>
@@ -203,10 +208,13 @@ onMounted(loadTeams)
             <span><Users :size="15" />{{ team.members }} / {{ team.capacity }} 人</span>
             <span><i></i>{{ team.activeNow }} 人在线</span>
           </div>
-          <div class="team-actions">
+          <div class="team-card-actions">
             <button v-if="!joined.includes(team.id)" class="btn btn-primary" @click="joinTeam(team.id)">加入小队</button>
-            <button v-else class="btn joined" @click="goTeamChat(team)">已加入 · 进入看看</button>
-            <button v-if="isLeader(team)" class="dissolve-button" @click="openDissolve(team)"><Trash2 :size="15" />解散小队</button>
+            <template v-else>
+              <button class="btn joined" @click="goTeamChat(team)">已加入 · 进入看看</button>
+              <button v-if="team.myRole" class="btn btn-outline btn-sm" title="管理小队" @click="manageTeam(team)"><Settings :size="14" /></button>
+              <button v-if="isLeader(team)" class="dissolve-icon-btn" title="解散小队" @click="openDissolve(team)"><Trash2 :size="14" /></button>
+            </template>
           </div>
         </div>
       </article>
@@ -223,42 +231,49 @@ onMounted(loadTeams)
         <li v-for="(team,index) in teams.slice(0,3)" :key="team.id">
           <b>{{ index + 1 }}</b>
           <img :src="team.cover" />
-          <span><strong>{{ team.name }}</strong><small>本周 {{ 3 - index }} 场活动 · {{ 86 - index * 15 }} 条动态</small></span>
-          <em><Trophy v-if="index===0" :size="15" />{{ 2840 - index * 720 }}</em>
+          <span>{{ team.name }}</span>
+          <small>{{ team.activeNow }} 活跃</small>
         </li>
       </ol>
     </section>
 
-    <div v-if="showCreate" class="team-modal" @click.self="showCreate=false">
+    <div v-if="showCreate" class="reject-modal" @click.self="showCreate=false">
       <div>
-        <h2>创建小队</h2>
-        <label>小队名称 *<input v-model.trim="createForm.name" class="input" /></label>
-        <label>简介 *<textarea v-model.trim="createForm.description" class="textarea"></textarea></label>
-        <label>兴趣标签<input v-model.trim="createForm.tags" class="input" placeholder="用顿号分隔" /></label>
+        <button class="close" @click="showCreate=false">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <h2>创建兴趣小队</h2>
+        <p>填写小队信息，创建后自动成为队长。</p>
+        <div class="input-group"><label>小队名称 *</label><input v-model.trim="createForm.name" class="input" placeholder="给你的小队起个名字" /></div>
+        <div class="input-group"><label>小队简介 *</label><textarea v-model.trim="createForm.description" class="textarea" placeholder="描述一下这个小队的兴趣主题" /></div>
+        <div class="input-group"><label>兴趣标签（逗号或顿号分隔）</label><input v-model.trim="createForm.tags" class="input" placeholder="例如：徒步, 摄影, 美食" /></div>
         <div class="form-grid">
-          <label>人数上限<input v-model.number="createForm.capacity" class="input" type="number" min="2" /></label>
-          <label>加入方式<select v-model="createForm.joinMode" class="select"><option>公开加入</option><option>审核加入</option></select></label>
+          <div class="input-group"><label>人数上限</label><input v-model.number="createForm.capacity" class="input" type="number" min="10" max="500" /></div>
+          <div class="input-group"><label>加入方式</label><select v-model="createForm.joinMode" class="select"><option>公开加入</option><option>审核加入</option></select></div>
         </div>
-        <label>封面 URL<input v-model.trim="createForm.cover" class="input" placeholder="可选" /></label>
+        <div class="input-group"><label>封面图片 URL（可选）</label><input v-model.trim="createForm.cover" class="input" placeholder="粘贴图片链接" /></div>
         <p v-if="error" class="form-error">{{ error }}</p>
-        <footer><button class="btn btn-outline" @click="showCreate=false">取消</button><button class="btn btn-primary" :disabled="saving" @click="createTeam">{{ saving ? '创建中' : '创建小队' }}</button></footer>
+        <footer>
+          <button class="btn btn-outline" @click="showCreate=false">取消</button>
+          <button class="btn btn-primary" :disabled="saving" @click="createTeam">{{ saving ? '创建中...' : '创建小队' }}</button>
+        </footer>
       </div>
     </div>
 
-    <div v-if="dissolving" class="team-modal danger-modal" @click.self="closeDissolve">
+    <div v-if="dissolving" class="reject-modal danger-modal" @click.self="closeDissolve">
       <div>
         <span class="danger-icon"><AlertTriangle :size="24" /></span>
         <h2>解散小队</h2>
-        <p class="danger-copy">解散后所有成员会自动退出，群聊和队内活动将停止使用，小队也不会再出现在发现列表中。</p>
+        <p>解散后所有成员会自动退出，群聊和队内活动将停止使用，小队也不会再出现在发现列表中。</p>
         <div class="dissolve-summary">
           <b>{{ dissolving.name }}</b>
           <span>{{ dissolving.members }} 位成员 · {{ dissolving.activeNow }} 人在线</span>
         </div>
-        <label>输入“解散小队”确认<input v-model.trim="dissolveConfirm" class="input" autocomplete="off" /></label>
+        <div class="input-group"><label>输入“解散小队”确认</label><input v-model.trim="dissolveConfirm" class="input" autocomplete="off" /></div>
         <p v-if="dissolveError" class="form-error">{{ dissolveError }}</p>
         <footer>
           <button class="btn btn-outline" :disabled="dissolveBusy" @click="closeDissolve">取消</button>
-          <button class="btn danger-confirm" :disabled="dissolveBusy || dissolveConfirm.trim() !== '解散小队'" @click="dissolveTeam">{{ dissolveBusy ? '解散中' : '确认解散' }}</button>
+          <button class="btn danger-confirm" :disabled="dissolveBusy || dissolveConfirm.trim() !== '解散小队'" @click="dissolveTeam">{{ dissolveBusy ? '解散中...' : '确认解散' }}</button>
         </footer>
       </div>
     </div>
@@ -266,6 +281,6 @@ onMounted(loadTeams)
 </template>
 
 <style scoped>
-.teams-page{padding:48px 0 80px}.teams-hero{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:center;padding:42px;background:linear-gradient(135deg,#fff3ed,#eaf8f5);border-radius:var(--radius-xl)}.teams-hero h1{margin:5px 0 14px;font-size:40px;line-height:1.25;letter-spacing:-.05em}.teams-hero p{color:var(--color-ink-soft)}.team-search{max-width:430px;height:48px;padding:0 14px;background:#fff;border-radius:var(--radius-pill);display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-soft)}.team-search input{flex:1;border:0;outline:0}.my-team-card{padding:24px;background:rgba(255,255,255,.85);border:1px solid #fff;border-radius:20px;box-shadow:var(--shadow-card)}.my-top{display:flex;align-items:center;gap:12px}.my-top img{width:55px;height:55px;border-radius:14px;object-fit:cover}.my-top div{display:flex;flex-direction:column}.my-top div>span{color:var(--color-ink-soft);font-size:10px}.my-top h3{margin:4px 0}.online{margin-left:auto;padding:5px 8px;border-radius:var(--radius-pill);background:var(--color-mint-soft);color:var(--color-mint);font-size:9px;font-weight:800}.my-team-card>p{margin:17px 0;padding:12px;background:var(--color-bg);border-radius:9px;font-size:11px}.my-actions{display:flex;gap:8px}.my-actions button{flex:1;padding:10px;border:1px solid var(--color-line);border-radius:9px;background:#fff;font-size:11px;font-weight:700}.tabs{display:flex;gap:4px;margin:32px 0 20px;border-bottom:1px solid var(--color-line)}.tabs button{padding:13px 17px;border:0;border-bottom:2px solid transparent;background:none;color:var(--color-ink-soft);font-weight:700}.tabs button.active{border-color:var(--color-primary);color:var(--color-ink)}.tabs .create-team{margin-left:auto;color:var(--color-primary);display:flex;align-items:center;gap:6px}.teams-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.team-card{overflow:hidden;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-lg)}.team-cover{position:relative;height:170px}.team-cover img{width:100%;height:100%;object-fit:cover}.team-cover>span{position:absolute;right:12px;top:12px;padding:6px 9px;background:rgba(255,255,255,.9);border-radius:var(--radius-pill);font-size:9px;font-weight:800}.team-body{padding:20px}.team-name{display:flex;justify-content:space-between;align-items:center}.team-name h2{margin:0;font-size:20px}.team-name span{padding:4px 6px;background:#fff5d9;color:#9a6b00;border-radius:5px;display:flex;align-items:center;gap:3px;font-size:8px}.team-body>p{height:37px;color:var(--color-ink-soft);font-size:12px;line-height:1.6}.team-data{display:flex;justify-content:space-between;margin:14px 0;color:var(--color-ink-soft);font-size:10px}.team-data span{display:flex;align-items:center;gap:4px}.team-data i{width:6px;height:6px;border-radius:50%;background:var(--color-mint)}.team-actions{display:grid;gap:8px}.team-actions>.btn{width:100%;padding:10px;font-size:11px}.team-actions>.joined{background:var(--color-bg)}.dissolve-button{width:100%;padding:9px;border:1px solid #ffd4d9;border-radius:9px;background:#fff7f8;color:var(--color-danger);display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;font-weight:800}.empty-state{padding:34px;border:1px dashed var(--color-line);border-radius:var(--radius-md);background:#fff;color:var(--color-ink-soft);text-align:center}.leaderboard{margin-top:45px;padding:35px 42px;border-radius:var(--radius-xl);background:var(--color-ink);color:#fff;display:grid;grid-template-columns:.7fr 1.3fr;gap:50px;align-items:center}.leaderboard h2{font-size:28px}.leaderboard>div>p{color:#aeb5c3}.leaderboard ol{list-style:none;margin:0;padding:0}.leaderboard li{display:flex;align-items:center;gap:12px;padding:12px;border-bottom:1px solid rgba(255,255,255,.1)}.leaderboard li>b{width:20px;color:var(--color-sun);font-size:18px}.leaderboard li img{width:40px;height:40px;border-radius:10px;object-fit:cover}.leaderboard li span{display:flex;flex-direction:column}.leaderboard li small{margin-top:3px;color:#8e98aa;font-size:9px}.leaderboard li em{margin-left:auto;font-style:normal;color:var(--color-sun);font-size:12px;display:flex;gap:5px}.team-modal{position:fixed;z-index:100;inset:0;padding:18px;background:rgba(13,21,34,.55);display:grid;place-items:center}.team-modal>div{width:min(100%,520px);padding:28px;background:#fff;border-radius:16px}.team-modal label{display:flex;flex-direction:column;gap:6px;margin-top:12px;font-size:10px;font-weight:800}.team-modal textarea{min-height:90px}.team-modal .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.team-modal footer{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.form-error{padding:8px;border-radius:7px;background:#ffeaed;color:var(--color-danger);font-size:10px}.danger-modal>div{text-align:left}.danger-icon{width:52px;height:52px;margin-bottom:16px;border-radius:14px;background:#ffeaed;color:var(--color-danger);display:grid;place-items:center}.danger-copy{margin:8px 0 16px;color:var(--color-ink-soft);font-size:12px;line-height:1.7}.dissolve-summary{padding:13px 14px;border:1px solid #ffd4d9;border-radius:10px;background:#fff7f8;display:flex;flex-direction:column;gap:4px}.dissolve-summary span{color:var(--color-ink-soft);font-size:10px}.danger-confirm{padding:10px 14px;border:0;border-radius:10px;background:var(--color-danger);color:#fff;font-size:11px;font-weight:900}.danger-confirm:disabled,.dissolve-button:disabled{opacity:.45;cursor:not-allowed}
-@media(max-width:900px){.teams-hero{grid-template-columns:1fr}.teams-grid{grid-template-columns:1fr 1fr}.leaderboard{grid-template-columns:1fr}}@media(max-width:600px){.teams-hero{padding:28px}.teams-hero h1{font-size:31px}.teams-grid{grid-template-columns:1fr}.tabs button{padding:11px 8px;font-size:11px}.tabs .create-team{font-size:0}.leaderboard{padding:27px 20px}.team-modal footer{flex-direction:column}.team-modal footer .btn,.danger-confirm{width:100%}}
+.teams-page{padding:48px 0 80px}.teams-hero{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:center;padding:42px;background:linear-gradient(135deg,#fff3ed,#eaf8f5);border-radius:var(--radius-xl)}.teams-hero h1{margin:5px 0 14px;font-size:40px;line-height:1.25;letter-spacing:-.05em}.teams-hero p{color:var(--color-ink-soft)}.team-search{max-width:430px;height:48px;padding:0 14px;background:#fff;border-radius:var(--radius-pill);display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-soft)}.team-search input{flex:1;border:0;outline:0}.my-team-card{padding:24px;background:rgba(255,255,255,.85);border:1px solid #fff;border-radius:20px;box-shadow:var(--shadow-card)}.my-top{display:flex;align-items:center;gap:12px}.my-top img{width:55px;height:55px;border-radius:14px;object-fit:cover}.my-top div{display:flex;flex-direction:column}.my-top div>span{color:var(--color-ink-soft);font-size:10px}.my-top h3{margin:4px 0}.online{margin-left:auto;padding:5px 8px;border-radius:var(--radius-pill);background:var(--color-mint-soft);color:var(--color-mint);font-size:9px;font-weight:800}.my-team-card>p{margin:17px 0;padding:12px;background:var(--color-bg);border-radius:9px;font-size:11px}.my-actions{display:flex;gap:8px}.my-actions button{flex:1;padding:10px;border:1px solid var(--color-line);border-radius:9px;background:#fff;font-size:11px;font-weight:700}.my-actions .btn-manage{flex:0 0 auto;padding:10px 14px;background:var(--color-primary-soft);color:var(--color-primary);border-color:transparent;display:flex;align-items:center;gap:5px}.tabs{display:flex;gap:4px;margin:32px 0 20px;border-bottom:1px solid var(--color-line)}.tabs button{padding:13px 17px;border:0;border-bottom:2px solid transparent;background:none;color:var(--color-ink-soft);font-weight:700}.tabs button.active{border-color:var(--color-primary);color:var(--color-ink)}.tabs .create-team{margin-left:auto;color:var(--color-primary);display:flex;align-items:center;gap:6px}.teams-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.team-card{overflow:hidden;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-lg)}.team-cover{position:relative;height:170px;overflow:hidden}.team-cover img{width:100%;height:100%;object-fit:cover}.team-cover span{position:absolute;right:12px;top:12px;padding:5px 10px;background:rgba(255,255,255,.9);border-radius:var(--radius-pill);font-size:10px;font-weight:800}.team-body{padding:18px}.team-name{display:flex;align-items:center;gap:10px;margin-bottom:8px}.team-name h2{margin:0;font-size:20px;letter-spacing:-.02em}.team-name span{display:flex;align-items:center;gap:4px;padding:3px 8px;background:var(--color-primary-soft);color:var(--color-primary);border-radius:var(--radius-pill);font-size:10px;font-weight:800}.team-body>p{height:40px;color:var(--color-ink-soft);font-size:13px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.team-data{display:flex;justify-content:space-between;margin-bottom:14px;color:var(--color-ink-soft);font-size:12px}.team-data span{display:flex;align-items:center;gap:4px}.team-data i{width:7px;height:7px;border-radius:50%;background:var(--color-mint)}.team-card-actions{display:flex;gap:8px}.team-card-actions .btn{flex:1}.team-card-actions .btn-outline,.dissolve-icon-btn{flex:0 0 auto}.dissolve-icon-btn{width:36px;border:1px solid #ffd4d9;border-radius:var(--radius-pill);background:#fff7f8;color:var(--color-danger);display:grid;place-items:center}.form-error{color:var(--color-danger);font-size:12px;margin:8px 0 0}.leaderboard{display:grid;grid-template-columns:1fr 320px;align-items:center;gap:40px;margin-top:60px;padding:36px;background:#fff;border-radius:var(--radius-xl);border:1px solid var(--color-line)}.leaderboard ol{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:14px}.leaderboard ol li{display:flex;align-items:center;gap:12px;padding:12px;background:var(--color-bg);border-radius:12px}.leaderboard ol b{width:28px;height:28px;display:grid;place-items:center;border-radius:50%;background:var(--color-primary);color:#fff;font-size:13px}.leaderboard ol img{width:36px;height:36px;border-radius:10px;object-fit:cover}.leaderboard ol small{margin-left:auto;color:var(--color-ink-soft);font-size:11px}.danger-modal>div{width:min(100%,460px)}.danger-icon{width:52px;height:52px;margin-bottom:16px;border-radius:14px;background:#ffeaed;color:var(--color-danger);display:grid;place-items:center}.dissolve-summary{padding:13px 14px;border:1px solid #ffd4d9;border-radius:10px;background:#fff7f8;display:flex;flex-direction:column;gap:4px}.dissolve-summary span{color:var(--color-ink-soft);font-size:10px}.danger-confirm{background:var(--color-danger);color:#fff}.danger-confirm:disabled,.dissolve-icon-btn:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:900px){.teams-hero{grid-template-columns:1fr}.teams-grid{grid-template-columns:1fr 1fr}.leaderboard{grid-template-columns:1fr}}@media(max-width:600px){.teams-hero{padding:28px}.teams-hero h1{font-size:31px}.teams-grid{grid-template-columns:1fr}.tabs button{padding:11px 8px;font-size:11px}.tabs .create-team{font-size:0}.leaderboard{padding:27px 20px}}
 </style>

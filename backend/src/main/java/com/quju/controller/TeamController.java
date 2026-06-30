@@ -5,9 +5,11 @@ import com.quju.dto.TeamDto;
 import com.quju.dto.TeamOpsDtos;
 import com.quju.service.TeamService;
 import com.quju.service.UserService;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,14 +31,23 @@ public class TeamController {
     }
 
     @GetMapping
-    public ApiResponse<List<TeamDto>> list(@RequestParam(required = false) String query) {
-        return ApiResponse.success(teamService.list(query, false));
+    public ApiResponse<List<TeamDto>> list(@RequestParam(required = false) String query,
+                                           @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = resolveUserId(authorization);
+        return ApiResponse.success(teamService.list(query, false, userId));
     }
 
     @PostMapping
     public ApiResponse<TeamDto> create(@RequestBody TeamDto request,
                                        @RequestHeader(value = "Authorization", required = false) String authorization) {
         return ApiResponse.success(teamService.create(request, userService.requireToken(authorization).getId()));
+    }
+
+    @GetMapping("/{id}")
+    public ApiResponse<TeamDto> detail(@PathVariable String id,
+                                       @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = resolveUserId(authorization);
+        return ApiResponse.success(teamService.get(id, userId));
     }
 
     @PostMapping("/{id}/members")
@@ -47,9 +58,16 @@ public class TeamController {
     }
 
     @GetMapping("/memberships/me")
-    public ApiResponse<List<String>> mine(@RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ApiResponse<Map<String, String>> mine(@RequestHeader(value = "Authorization", required = false) String authorization) {
         String userId = userService.requireToken(authorization).getId();
-        return ApiResponse.success(teamService.myTeamIds(userId));
+        return ApiResponse.success(teamService.myTeamRoles(userId));
+    }
+
+    @GetMapping("/{id}/members")
+    public ApiResponse<List<Map<String, Object>>> members(@PathVariable String id,
+                                                          @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        return ApiResponse.success(teamService.members(id, userId));
     }
 
     @GetMapping("/{id}/join-requests")
@@ -125,5 +143,52 @@ public class TeamController {
         String userId = userService.requireToken(authorization).getId();
         teamService.dissolve(id, userId, request);
         return ApiResponse.success(null);
+    }
+
+    // ── US-C08 新增端点 ──
+
+    @PutMapping("/{id}/members/{uid}/role")
+    public ApiResponse<Void> setMemberRole(@PathVariable String id,
+                                           @PathVariable String uid,
+                                           @RequestBody TeamOpsDtos.RoleChangeRequest request,
+                                           @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        teamService.setRole(id, userId, uid, request.getRole());
+        return ApiResponse.success(null);
+    }
+
+    @DeleteMapping("/{id}/members/{uid}")
+    public ApiResponse<Void> removeMember(@PathVariable String id,
+                                          @PathVariable String uid,
+                                          @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        teamService.removeMember(id, userId, uid);
+        return ApiResponse.success(null);
+    }
+
+    @PutMapping("/{id}")
+    public ApiResponse<TeamDto> updateInfo(@PathVariable String id,
+                                           @RequestBody TeamOpsDtos.UpdateTeamRequest request,
+                                           @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        return ApiResponse.success(teamService.updateInfo(id, userId, request));
+    }
+
+    @PostMapping("/{id}/transfer")
+    public ApiResponse<TeamDto> transferOwnership(@PathVariable String id,
+                                                  @RequestBody TeamOpsDtos.RoleChangeRequest request,
+                                                  @RequestHeader(value = "Authorization", required = false) String authorization) {
+        // reusing RoleChangeRequest.role as targetUserId
+        String userId = userService.requireToken(authorization).getId();
+        return ApiResponse.success(teamService.transferOwnership(id, userId, request.getRole()));
+    }
+
+    private String resolveUserId(String authorization) {
+        if (authorization == null || authorization.isBlank()) return null;
+        try {
+            return userService.requireToken(authorization).getId();
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

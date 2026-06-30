@@ -129,6 +129,7 @@ public class MessageService {
                 item.setLastMessage(rs.getString("last_message"));
                 item.setLastTime(rs.getString("last_time"));
                 item.setOnline(rs.getBoolean("online"));
+                item.setTeamId(rs.getString("team_id"));
                 return item;
             }
         };

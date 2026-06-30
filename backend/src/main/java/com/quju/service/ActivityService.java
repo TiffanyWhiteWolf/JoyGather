@@ -107,6 +107,28 @@ public class ActivityService {
         return result;
     }
 
+    public List<ActivityOpsDtos.RegistrationManagementDto> registrationManagement(String activityId, String organizerId) {
+        ActivityDto activity = requireActivity(activityId);
+        if (!organizerId.equals(activity.getOrganizer().getId())) throw new IllegalStateException("只有发起人可以查看签到管理");
+        return jdbc.query("select r.id, r.user_id, u.nickname, u.avatar, r.status, r.queue_position, r.created_at, r.checked_in_at "
+                        + "from registrations r join users u on u.id = r.user_id where r.activity_id = ? "
+                        + "order by case r.status when '已签到' then 1 when '已报名' then 2 when '候补中' then 3 else 4 end, r.created_at asc",
+                (rs, rowNum) -> {
+                    ActivityOpsDtos.RegistrationManagementDto dto = new ActivityOpsDtos.RegistrationManagementDto();
+                    dto.setId(rs.getString("id"));
+                    dto.setUserId(rs.getString("user_id"));
+                    dto.setNickname(rs.getString("nickname"));
+                    dto.setAvatar(rs.getString("avatar"));
+                    dto.setStatus(rs.getString("status"));
+                    dto.setQueuePosition(rs.getInt("queue_position"));
+                    Timestamp createdAt = rs.getTimestamp("created_at");
+                    Timestamp checkedInAt = rs.getTimestamp("checked_in_at");
+                    dto.setCreatedAt(createdAt == null ? null : createdAt.toLocalDateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+                    dto.setCheckedInAt(checkedInAt == null ? null : checkedInAt.toLocalDateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+                    return dto;
+                }, activityId);
+    }
+
     @Transactional
     public ActivityDto create(ActivityCreateRequest request) {
         return create(request, DbSupport.safe(request.getOrganizerId(), UserService.DEFAULT_USER_ID));
@@ -115,6 +137,7 @@ public class ActivityService {
     @Transactional
     public ActivityDto create(ActivityCreateRequest request, String organizerId) {
         validateForSubmit(request);
+        ensureTeamCanAcceptActivity(request.getTeamId());
         String id = DbSupport.id("act");
         IntegrationService.ModerationResult moderation = integrationService == null
                 ? localModeration(request)
@@ -397,6 +420,9 @@ public class ActivityService {
         List<ActivityDto> result = new ArrayList<ActivityDto>();
         for (ActivityDto item : items) {
             String haystack = (item.getTitle() + item.getSummary() + item.getDescription() + DbSupport.join(item.getTags())).toLowerCase(Locale.CHINA);
+            if (item.getOrganizer() != null) {
+                haystack += (item.getOrganizer().getNickname() + item.getOrganizer().getEmail() + item.getOrganizer().getId()).toLowerCase(Locale.CHINA);
+            }
             if (!normalized.isEmpty() && !haystack.contains(normalized)) continue;
             if (category != null && !category.isEmpty() && !category.equals(item.getCategory())) continue;
             if (status != null && !status.isEmpty() && !status.startsWith("全部") && !status.equals(item.getStatus())) continue;
@@ -506,6 +532,13 @@ public class ActivityService {
         if (!endAt.isAfter(startAt)) throw new IllegalStateException("活动结束时间需要晚于开始时间");
         if (!startAt.isAfter(LocalDateTime.now())) throw new IllegalStateException("活动开始时间需要晚于当前时间");
         if (deadline.isAfter(startAt)) throw new IllegalStateException("报名截止时间不能晚于活动开始时间");
+    }
+
+    private void ensureTeamCanAcceptActivity(String teamId) {
+        if (teamId == null || teamId.trim().isEmpty()) return;
+        List<String> statuses = jdbc.queryForList("select status from teams where id = ?", String.class, teamId);
+        if (statuses.isEmpty()) throw new NoSuchElementException("小队不存在");
+        if (!"正常".equals(statuses.get(0))) throw new IllegalStateException("小队已停用，暂不可新增活动");
     }
 
     private void validateDraftForSubmit(ActivityDto draft) {
