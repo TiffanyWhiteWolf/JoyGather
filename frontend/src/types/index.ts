@@ -17,7 +17,7 @@ export interface User {
   followers: number
   credit: number
   verified?: boolean
-  status?: '正常' | '已封禁'
+  status?: '正常' | '已封禁' | '已注销'
   banReason?: string
   banUntil?: string
   merchantName?: string

@@ -139,6 +139,13 @@ public class ActivityController {
         return ApiResponse.success(activityService.myRegistrationStatus(userId));
     }
 
+    @GetMapping("/{id}/registrations")
+    public ApiResponse<List<ActivityOpsDtos.RegistrationManagementDto>> registrations(@PathVariable String id,
+                                                                                      @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        return ApiResponse.success(activityService.registrationManagement(id, userId));
+    }
+
     @PostMapping("/{id}/waitlist/confirm")
     public ApiResponse<RegistrationResult> confirmWaitlist(@PathVariable String id,
                                                            @RequestHeader(value = "Authorization", required = false) String authorization) {
@@ -151,7 +158,7 @@ public class ActivityController {
                                                                         @RequestBody(required = false) ActivityOpsDtos.CheckinScanRequest request,
                                                                         @RequestHeader(value = "Authorization", required = false) String authorization) {
         String userId = userService.requireToken(authorization).getId();
-        return ApiResponse.success(activityService.createCheckinCode(id, userId, request != null && Boolean.TRUE.equals(request.getLatitude() != null)));
+        return ApiResponse.success(activityService.createCheckinCode(id, userId, request != null && Boolean.TRUE.equals(request.getLocationRequired())));
     }
 
     @PostMapping("/{id}/summaries")

@@ -23,6 +23,13 @@ const places = [
   { name: '天目里社区中心', district: '西湖区', longitude: 120.1219, latitude: 30.2833 },
 ]
 
+interface GeoPoint {
+  name: string
+  district: string
+  longitude: number
+  latitude: number
+}
+
 function markerIcon() {
   return L.divIcon({ className: 'pick-marker', html: '<span></span>', iconSize: [30, 30], iconAnchor: [15, 30] })
 }
@@ -33,6 +40,15 @@ function setPoint(location: string, district: string, longitude: number, latitud
   marker = L.marker([latitude, longitude], { icon: markerIcon() }).addTo(map)
   map.setView([latitude, longitude], 15)
   emit('select', { location, district, longitude, latitude })
+}
+
+async function reversePoint(longitude: number, latitude: number, fallbackName: string): Promise<GeoPoint> {
+  try {
+    return await apiGet<GeoPoint>(`/map/reverse?longitude=${longitude}&latitude=${latitude}`)
+  } catch {
+    error.value = '城区识别服务暂不可用，已保留坐标，可手动调整城区。'
+    return { name: fallbackName, district: '定位城区', longitude, latitude }
+  }
 }
 
 async function searchPlace() {
@@ -53,7 +69,14 @@ function locateMe() {
     return
   }
   navigator.geolocation.getCurrentPosition(
-    position => setPoint(`地图选点 ${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}`, '杭州', position.coords.longitude, position.coords.latitude),
+    async position => {
+      error.value = ''
+      const latitude = position.coords.latitude
+      const longitude = position.coords.longitude
+      const fallbackName = `当前位置 ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
+      const point = await reversePoint(longitude, latitude, fallbackName)
+      setPoint(point.name || fallbackName, point.district || '定位城区', longitude, latitude)
+    },
     () => { error.value = '定位授权未开启，可点击地图或手动输入地点。' },
     { timeout: 5000 },
   )
@@ -66,10 +89,13 @@ onMounted(async () => {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 })
     .on('tileerror', () => { error.value = '地图服务暂不可用，可继续手动输入地点。' })
     .addTo(map)
-  map.on('click', event => {
+  map.on('click', async event => {
     const lat = event.latlng.lat
     const lng = event.latlng.lng
-    setPoint(`地图选点 ${lat.toFixed(5)}, ${lng.toFixed(5)}`, '杭州', lng, lat)
+    error.value = ''
+    const fallbackName = `地图选点 ${lat.toFixed(5)}, ${lng.toFixed(5)}`
+    const point = await reversePoint(lng, lat, fallbackName)
+    setPoint(point.name || fallbackName, point.district || '定位城区', lng, lat)
   })
   setTimeout(() => map?.invalidateSize(), 50)
 })

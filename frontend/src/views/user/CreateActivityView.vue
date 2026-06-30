@@ -20,6 +20,7 @@ const savedAt = ref('尚未保存')
 const longitude = ref(120.15507)
 const latitude = ref(30.274085)
 const categories: ActivityCategory[] = ['城市探索', '户外运动', '桌游聚会', '学习交流', '运动健身', '公益活动']
+const districtOptions = computed(() => Array.from(new Set(['拱墅区', '西湖区', '上城区', '滨江区', '余杭区', '萧山区', '钱塘区', '临平区', form.district].filter(Boolean))))
 const templates = [
   { name: '城市探索', category: '城市探索' as ActivityCategory, title: '周末城市漫步', tags: 'Citywalk、摄影、新手友好', summary: '不赶路地认识城市，也认识同行的人。', safety: '请穿舒适的鞋，遵守交通规则并保持队伍联系。' },
   { name: '户外徒步', category: '户外运动' as ActivityCategory, title: '新手友好轻徒步', tags: '徒步、自然、零基础', summary: '低强度路线，途中安排休息与补给。', safety: '根据天气准备防晒或雨具，领队携带急救包。' },
@@ -322,7 +323,7 @@ onMounted(async () => {
         <template v-else-if="step===2">
           <div class="form-grid"><div class="input-group"><label>活动日期 *</label><input v-model="form.date" class="input" type="date" /><p v-if="fieldErrors.date" class="field-error">{{ fieldErrors.date }}</p></div><div class="input-group"><label>报名截止 *</label><input v-model="form.deadline" class="input" type="datetime-local" /><p v-if="fieldErrors.deadline" class="field-error">{{ fieldErrors.deadline }}</p></div></div>
           <div class="form-grid"><div class="input-group"><label>开始时间 *</label><input v-model="form.startTime" class="input" type="time" /><p v-if="fieldErrors.startTime" class="field-error">{{ fieldErrors.startTime }}</p></div><div class="input-group"><label>结束时间 *</label><input v-model="form.endTime" class="input" type="time" /><p v-if="fieldErrors.endTime" class="field-error">{{ fieldErrors.endTime }}</p></div></div>
-          <div class="form-grid"><div class="input-group"><label>城区 *</label><select v-model="form.district" class="select"><option v-for="item in ['拱墅区','西湖区','上城区','滨江区','余杭区']" :key="item">{{ item }}</option></select></div><div class="input-group"><label>集合地点 *</label><input v-model.trim="form.location" class="input" placeholder="输入可被准确找到的地点" /><p v-if="fieldErrors.location" class="field-error">{{ fieldErrors.location }}</p></div></div>
+          <div class="form-grid"><div class="input-group"><label>城区 *</label><select v-model="form.district" class="select"><option v-for="item in districtOptions" :key="item">{{ item }}</option></select></div><div class="input-group"><label>集合地点 *</label><input v-model.trim="form.location" class="input" placeholder="输入可被准确找到的地点" /><p v-if="fieldErrors.location" class="field-error">{{ fieldErrors.location }}</p></div></div>
           <LocationPicker @select="selectLocation" />
           <div class="map-picker"><MapPin /><div><b>地图选点已开启</b><p>当前坐标：{{ latitude.toFixed(5) }}, {{ longitude.toFixed(5) }} · {{ form.location || '点击地图选择集合点' }}</p></div><button @click="selectLocation({ location:'桥西历史文化街区游客中心', district:'拱墅区', longitude:120.139863, latitude:30.318332 })">选用推荐点位</button></div>
         </template>
