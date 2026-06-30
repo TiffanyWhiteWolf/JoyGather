@@ -8,16 +8,31 @@ export const useAppStore = defineStore('app', () => {
   const notifications = ref(3)
   const joinedActivityIds = ref<string[]>([])
   const waitingActivityIds = ref<string[]>([])
-  const joinedTeamIds = ref<string[]>([])
+  const teamRoles = ref<Record<string, string>>({})
   const draft = ref<ActivityDraft | null>(null)
   const submittedActivities = ref<ActivityDraft[]>([])
   const toast = ref('')
   let toastTimer = 0
 
+  const joinedTeamIds = computed(() => Object.keys(teamRoles.value))
+
   function showToast(message: string) {
     toast.value = message
     window.clearTimeout(toastTimer)
     toastTimer = window.setTimeout(() => { toast.value = '' }, 2600)
+  }
+
+  function myTeamRole(teamId: string): string | undefined {
+    return teamRoles.value[teamId]
+  }
+
+  function isTeamOwner(teamId: string): boolean {
+    return teamRoles.value[teamId] === '队长'
+  }
+
+  function isTeamAdmin(teamId: string): boolean {
+    const r = teamRoles.value[teamId]
+    return r === '队长' || r === '管理员'
   }
 
   function joinActivity(id: string, full = false) {
@@ -40,7 +55,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function joinTeam(id: string) {
-    if (!joinedTeamIds.value.includes(id)) joinedTeamIds.value.push(id)
+    if (!joinedTeamIds.value.includes(id)) teamRoles.value[id] = '成员'
     showToast('已加入小队，群聊已同步开放')
   }
 
@@ -63,7 +78,7 @@ export const useAppStore = defineStore('app', () => {
   function clearUserState() {
     joinedActivityIds.value = []
     waitingActivityIds.value = []
-    joinedTeamIds.value = []
+    teamRoles.value = {}
     draft.value = null
     submittedActivities.value = []
   }
@@ -82,16 +97,18 @@ export const useAppStore = defineStore('app', () => {
       waitingActivityIds.value = []
     }
     try {
-      joinedTeamIds.value = await apiGet<string[]>('/teams/memberships/me')
+      const roles = await apiGet<Record<string, string>>('/teams/memberships/me')
+      teamRoles.value = roles
     } catch {
-      joinedTeamIds.value = []
+      teamRoles.value = {}
     }
   }
 
   const registrationCount = computed(() => joinedActivityIds.value.length)
 
   return {
-    city, notifications, joinedActivityIds, waitingActivityIds, joinedTeamIds, draft, submittedActivities, toast,
+    city, notifications, joinedActivityIds, waitingActivityIds, joinedTeamIds, teamRoles, draft, submittedActivities, toast,
     registrationCount, showToast, joinActivity, cancelRegistration, joinTeam, saveDraft, clearDraft, submitActivity, clearUserState, refreshUserState,
+    myTeamRole, isTeamOwner, isTeamAdmin,
   }
 })

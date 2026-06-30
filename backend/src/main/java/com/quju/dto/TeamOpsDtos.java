@@ -38,4 +38,31 @@ public class TeamOpsDtos {
         public String getReason() { return reason; }
         public void setReason(String reason) { this.reason = reason; }
     }
+
+    public static class UpdateTeamRequest {
+        private String name;
+        private String description;
+        private String cover;
+        private List<String> tags;
+        private Integer capacity;
+        private String joinMode;
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getDescription() { return description; }
+        public void setDescription(String description) { this.description = description; }
+        public String getCover() { return cover; }
+        public void setCover(String cover) { this.cover = cover; }
+        public List<String> getTags() { return tags; }
+        public void setTags(List<String> tags) { this.tags = tags; }
+        public Integer getCapacity() { return capacity; }
+        public void setCapacity(Integer capacity) { this.capacity = capacity; }
+        public String getJoinMode() { return joinMode; }
+        public void setJoinMode(String joinMode) { this.joinMode = joinMode; }
+    }
+
+    public static class RoleChangeRequest {
+        private String role;
+        public String getRole() { return role; }
+        public void setRole(String role) { this.role = role; }
+    }
 }

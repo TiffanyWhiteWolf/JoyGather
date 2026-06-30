@@ -14,6 +14,8 @@ public class TeamDto {
     private int activeNow;
     private String status;
     private String stopReason;
+    private String ownerId;
+    private String myRole;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -37,4 +39,8 @@ public class TeamDto {
     public void setStatus(String status) { this.status = status; }
     public String getStopReason() { return stopReason; }
     public void setStopReason(String stopReason) { this.stopReason = stopReason; }
+    public String getOwnerId() { return ownerId; }
+    public void setOwnerId(String ownerId) { this.ownerId = ownerId; }
+    public String getMyRole() { return myRole; }
+    public void setMyRole(String myRole) { this.myRole = myRole; }
 }
