@@ -17,7 +17,7 @@ export interface User {
   followers: number
   credit: number
   verified?: boolean
-  status?: '正常' | '已封禁'
+  status?: '正常' | '已封禁' | '已注销'
   banReason?: string
   banUntil?: string
   merchantName?: string
@@ -68,6 +68,17 @@ export interface Team {
   activeNow: number
   status?: '正常' | '已停用'
   stopReason?: string
+  ownerId?: string
+  myRole?: '队长' | '管理员' | '成员'
+}
+
+export interface TeamMember {
+  userId: string
+  nickname: string
+  avatar: string
+  role: '队长' | '管理员' | '成员'
+  joinedAt: string
+  points?: number
 }
 
 export interface Registration {
@@ -133,6 +144,7 @@ export interface Conversation {
   lastMessage: string
   lastTime: string
   online?: boolean
+  teamId?: string
   messages: Message[]
 }
 

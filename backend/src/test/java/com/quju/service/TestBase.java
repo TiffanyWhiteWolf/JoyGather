@@ -174,6 +174,34 @@ public abstract class TestBase {
                 + "id varchar(64) primary key, activity_id varchar(64), user_id varchar(64), rating int,"
                 + "content varchar(1000), created_at timestamp default current_timestamp,"
                 + "unique(activity_id,user_id))");
+
+        jdbc.execute("create table teams ("
+                + "id varchar(64) primary key, name varchar(120), description varchar(1000),"
+                + "cover varchar(500), tags varchar(1000), members_count int, capacity int,"
+                + "join_mode varchar(32), active_now int, status varchar(32), stop_reason varchar(1000),"
+                + "owner_id varchar(64), created_at timestamp default current_timestamp,"
+                + "updated_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_members ("
+                + "team_id varchar(64), user_id varchar(64), role varchar(32), status varchar(32),"
+                + "joined_at timestamp default current_timestamp, primary key(team_id, user_id))");
+
+        jdbc.execute("create table follows ("
+                + "follower_id varchar(64), followee_id varchar(64), created_at timestamp default current_timestamp,"
+                + "primary key(follower_id, followee_id))");
+
+        jdbc.execute("create table friendships ("
+                + "user_id varchar(64), friend_id varchar(64), remark varchar(100), group_name varchar(100),"
+                + "created_at timestamp default current_timestamp, primary key(user_id, friend_id))");
+
+        jdbc.execute("create table friend_requests ("
+                + "id varchar(64) primary key, requester_id varchar(64), receiver_id varchar(64),"
+                + "source varchar(40), message varchar(1000), status varchar(32),"
+                + "created_at timestamp default current_timestamp, handled_at timestamp)");
+
+        jdbc.execute("create table user_blocks ("
+                + "user_id varchar(64), blocked_user_id varchar(64), reason varchar(1000),"
+                + "created_at timestamp default current_timestamp, primary key(user_id, blocked_user_id))");
     }
 
     // -------------------------------------------------------

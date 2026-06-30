@@ -18,6 +18,7 @@ const router = createRouter({
         { path: 'ai-planner', name: 'ai-planner', component: () => import('@/views/user/AiPlannerView.vue') },
         { path: 'check-in', name: 'check-in', component: () => import('@/views/user/CheckInView.vue') },
         { path: 'teams', name: 'teams', component: () => import('@/views/user/TeamsView.vue') },
+        { path: 'teams/:id/manage', name: 'team-manage', component: () => import('@/views/user/TeamManageView.vue') },
         { path: 'messages', name: 'messages', component: () => import('@/views/user/MessagesView.vue') },
         { path: 'profile', name: 'profile', component: () => import('@/views/user/ProfileView.vue') },
       ],

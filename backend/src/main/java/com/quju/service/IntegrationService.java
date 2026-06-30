@@ -157,6 +157,34 @@ public class IntegrationService {
         return fallbackPlaces(keyword);
     }
 
+    public CommonDtos.GeoPoint reverseGeocode(BigDecimal longitude, BigDecimal latitude) {
+        CommonDtos.GeoPoint fallback = fallbackReversePoint(longitude, latitude);
+        if (amapKey == null || amapKey.trim().isEmpty()) {
+            logThirdParty("AMAP", "REVERSE_GEOCODE", "DEGRADED", longitude + "," + latitude, fallback.getDistrict(), "高德 Key 未配置", 0);
+            return fallback;
+        }
+        long started = System.currentTimeMillis();
+        try {
+            String location = longitude.toPlainString() + "," + latitude.toPlainString();
+            String url = "https://restapi.amap.com/v3/geocode/regeo?key=" + amapKey + "&location=" + location + "&extensions=base";
+            Map response = restTemplate.getForObject(url, Map.class);
+            Map<String, Object> regeocode = asMap(response == null ? null : response.get("regeocode"));
+            Map<String, Object> address = asMap(regeocode.get("addressComponent"));
+            String district = DbSupport.safe(String.valueOf(address.get("district")), fallback.getDistrict()).trim();
+            String formatted = DbSupport.safe(String.valueOf(regeocode.get("formatted_address")), fallback.getName()).trim();
+            CommonDtos.GeoPoint point = new CommonDtos.GeoPoint();
+            point.setName(formatted == null || formatted.isEmpty() || "null".equals(formatted) ? fallback.getName() : formatted);
+            point.setDistrict(district == null || district.isEmpty() || "null".equals(district) ? fallback.getDistrict() : district);
+            point.setLongitude(longitude);
+            point.setLatitude(latitude);
+            logThirdParty("AMAP", "REVERSE_GEOCODE", "SUCCESS", location, point.getDistrict(), "", elapsed(started));
+            return point;
+        } catch (Exception ex) {
+            logThirdParty("AMAP", "REVERSE_GEOCODE", "FAILED", longitude + "," + latitude, "", trim(ex.getMessage()), elapsed(started));
+            return fallback;
+        }
+    }
+
     private HttpHeaders aiHeaders() {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -239,6 +267,48 @@ public class IntegrationService {
         point.setLongitude(new BigDecimal("120.155070"));
         point.setLatitude(new BigDecimal("30.274085"));
         return Collections.singletonList(point);
+    }
+
+    private CommonDtos.GeoPoint fallbackReversePoint(BigDecimal longitude, BigDecimal latitude) {
+        String district = nearestHangzhouDistrict(longitude, latitude);
+        CommonDtos.GeoPoint point = new CommonDtos.GeoPoint();
+        point.setName("当前位置 " + latitude.toPlainString() + ", " + longitude.toPlainString());
+        point.setDistrict(district);
+        point.setLongitude(longitude);
+        point.setLatitude(latitude);
+        return point;
+    }
+
+    private String nearestHangzhouDistrict(BigDecimal longitude, BigDecimal latitude) {
+        double lng = longitude.doubleValue();
+        double lat = latitude.doubleValue();
+        Object[][] centers = {
+                {"拱墅区", 120.1551, 30.3183},
+                {"西湖区", 120.1302, 30.2595},
+                {"上城区", 120.1715, 30.2502},
+                {"滨江区", 120.2120, 30.2084},
+                {"余杭区", 120.2994, 30.4187},
+                {"萧山区", 120.2645, 30.1853},
+                {"钱塘区", 120.4939, 30.3229},
+                {"临平区", 120.2992, 30.4219}
+        };
+        String best = "定位城区";
+        double bestDistance = Double.MAX_VALUE;
+        for (Object[] center : centers) {
+            double dLng = lng - ((Number) center[1]).doubleValue();
+            double dLat = lat - ((Number) center[2]).doubleValue();
+            double distance = dLng * dLng + dLat * dLat;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = String.valueOf(center[0]);
+            }
+        }
+        return best;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> asMap(Object value) {
+        return value instanceof Map ? (Map<String, Object>) value : Collections.<String, Object>emptyMap();
     }
 
     public void saveAiAudit(String activityId, ModerationResult result, String raw) {

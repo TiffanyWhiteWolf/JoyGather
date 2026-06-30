@@ -31,3 +31,4 @@ frontend/vite.config.d.ts
 .idea/
 .vscode/
 
+.bitfun/

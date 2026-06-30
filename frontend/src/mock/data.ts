@@ -69,10 +69,10 @@ export const registrations: Registration[] = [
 ]
 
 export const reviewTasks: ReviewTask[] = [
-  { id: 'rv-001', targetId: 'act-001', type: '活动审核', title: '千岛湖夜间桨板体验', submitter: '浪尖水上俱乐部', risk: '高', reason: '水上活动 / 预计 68 人 / AI 标记安全风险', submittedAt: '10分钟前', status: '待审核' },
+  { id: 'rv-001', targetId: 'act-002', type: '活动审核', title: '千岛湖夜间桨板体验', submitter: '浪尖水上俱乐部', risk: '高', reason: '水上活动 / 预计 68 人 / AI 标记安全风险', submittedAt: '10分钟前', status: '待审核' },
   { id: 'rv-002', targetId: 'merchant-001', type: '商家认证', title: '流木咖啡（湖滨店）', submitter: '陈先生', risk: '低', reason: '营业执照与门店认证', submittedAt: '32分钟前', status: '待审核' },
   { id: 'rv-003', targetId: 'report-001', type: '举报处理', title: '夏夜酒吧交友派对', submitter: '用户举报 3 次', risk: '中', reason: '疑似宣传内容与实际活动不符', submittedAt: '1小时前', status: '待审核' },
-  { id: 'rv-004', targetId: 'act-004', type: '活动审核', title: '凌晨天文观测小队', submitter: '星空信号站', risk: '中', reason: '夜间活动 / 偏远地点', submittedAt: '2小时前', status: '待审核' },
+  { id: 'rv-004', targetId: 'act-006', type: '活动审核', title: '凌晨天文观测小队', submitter: '星空信号站', risk: '中', reason: '夜间活动 / 偏远地点', submittedAt: '2小时前', status: '待审核' },
 ]
 
 export const conversations: Conversation[] = [

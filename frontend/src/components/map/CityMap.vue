@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowUpRight, CalendarDays, LocateFixed, MapPin } from 'lucide-vue-next'
-import L, { type LatLngBounds, type Map as LeafletMap, type Marker } from 'leaflet'
+import L, { type CircleMarker, type LatLngBounds, type Map as LeafletMap, type Marker } from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import type { Activity } from '@/types'
 import { formatPrice } from '@/lib/utils'
@@ -9,6 +9,7 @@ import { formatPrice } from '@/lib/utils'
 const props = defineProps<{ activities: Activity[]; compact?: boolean; loading?: boolean }>()
 const emit = defineEmits<{
   'bounds-change': [bounds: { minLng: number; maxLng: number; minLat: number; maxLat: number }]
+  'location-change': [location: { latitude: number; longitude: number }]
 }>()
 
 const mapEl = ref<HTMLDivElement | null>(null)
@@ -17,6 +18,7 @@ const mapError = ref('')
 let map: LeafletMap | null = null
 let markers: Marker[] = []
 let hasFittedInitialActivities = false
+let userMarker: CircleMarker | null = null
 
 function toBounds(bounds: LatLngBounds) {
   const west = bounds.getWest()
@@ -59,12 +61,27 @@ function refreshMarkers() {
 }
 
 function locateMe() {
+  mapError.value = ''
   if (!navigator.geolocation || !map) {
     mapError.value = '无法读取定位，可继续通过列表或手动筛选浏览活动。'
     return
   }
   navigator.geolocation.getCurrentPosition(
-    position => map?.setView([position.coords.latitude, position.coords.longitude], 14),
+    position => {
+      if (!map) return
+      const latitude = position.coords.latitude
+      const longitude = position.coords.longitude
+      userMarker?.remove()
+      userMarker = L.circleMarker([latitude, longitude], {
+        radius: 8,
+        color: '#fff',
+        weight: 3,
+        fillColor: '#22b8a7',
+        fillOpacity: 1,
+      }).addTo(map).bindTooltip('我的位置', { direction: 'top' })
+      map.setView([latitude, longitude], 14, { animate: true })
+      emit('location-change', { latitude, longitude })
+    },
     () => { mapError.value = '定位授权未开启，可继续通过列表或手动筛选浏览活动。' },
     { timeout: 5000 },
   )
@@ -90,6 +107,8 @@ watch(() => props.activities, refreshMarkers, { deep: true })
 
 onBeforeUnmount(() => {
   clearMarkers()
+  userMarker?.remove()
+  userMarker = null
   map?.remove()
   map = null
 })
