@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @RestController
@@ -23,5 +24,11 @@ public class MapController {
     public ApiResponse<List<CommonDtos.GeoPoint>> places(@RequestParam String keyword,
                                                          @RequestParam(required = false) String city) {
         return ApiResponse.success(integrationService.searchAmap(keyword, city));
+    }
+
+    @GetMapping("/reverse")
+    public ApiResponse<CommonDtos.GeoPoint> reverse(@RequestParam BigDecimal longitude,
+                                                    @RequestParam BigDecimal latitude) {
+        return ApiResponse.success(integrationService.reverseGeocode(longitude, latitude));
     }
 }
