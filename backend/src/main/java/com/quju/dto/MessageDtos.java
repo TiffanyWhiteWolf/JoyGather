@@ -12,6 +12,7 @@ public class MessageDtos {
         private String lastMessage;
         private String lastTime;
         private Boolean online;
+        private String teamId;
         private List<MessageDto> messages;
         public String getId() { return id; }
         public void setId(String id) { this.id = id; }
@@ -29,6 +30,8 @@ public class MessageDtos {
         public void setLastTime(String lastTime) { this.lastTime = lastTime; }
         public Boolean getOnline() { return online; }
         public void setOnline(Boolean online) { this.online = online; }
+        public String getTeamId() { return teamId; }
+        public void setTeamId(String teamId) { this.teamId = teamId; }
         public List<MessageDto> getMessages() { return messages; }
         public void setMessages(List<MessageDto> messages) { this.messages = messages; }
     }

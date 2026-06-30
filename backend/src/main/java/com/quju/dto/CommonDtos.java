@@ -83,6 +83,18 @@ public class CommonDtos {
         public void setLicenseUrl(String licenseUrl) { this.licenseUrl = licenseUrl; }
     }
 
+    public static class AccountCancellationRequest {
+        private String password;
+        private String confirmText;
+        private String reason;
+        public String getPassword() { return password; }
+        public void setPassword(String password) { this.password = password; }
+        public String getConfirmText() { return confirmText; }
+        public void setConfirmText(String confirmText) { this.confirmText = confirmText; }
+        public String getReason() { return reason; }
+        public void setReason(String reason) { this.reason = reason; }
+    }
+
     public static class GeoPoint {
         private String name;
         private String district;
