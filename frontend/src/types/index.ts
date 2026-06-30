@@ -52,6 +52,7 @@ export interface Activity {
   safetyNote?: string
   minAge?: number
   joinFields?: string[]
+  offlineReason?: string
 }
 
 export interface Team {

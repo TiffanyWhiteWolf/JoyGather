@@ -30,6 +30,7 @@ public class ActivityDto {
     private String safetyNote;
     private int minAge;
     private List<String> joinFields;
+    private String offlineReason;
 
     public ActivityDto() { }
 
@@ -94,4 +95,6 @@ public class ActivityDto {
     public void setMinAge(int minAge) { this.minAge = minAge; }
     public List<String> getJoinFields() { return joinFields; }
     public void setJoinFields(List<String> joinFields) { this.joinFields = joinFields; }
+    public String getOfflineReason() { return offlineReason; }
+    public void setOfflineReason(String offlineReason) { this.offlineReason = offlineReason; }
 }

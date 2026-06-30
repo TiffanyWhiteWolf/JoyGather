@@ -55,6 +55,12 @@ public class ActivityController {
         return ApiResponse.success(activityService.findAll(keyword, category, categories, city, fee, time, distance, lat, lng, minLng, maxLng, minLat, maxLat, sort, page, size));
     }
 
+    @GetMapping("/my")
+    public ApiResponse<List<ActivityDto>> myActivities(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        return ApiResponse.success(activityService.findMyActivities(userId));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<ActivityDto>> detail(@PathVariable String id) {
         return activityService.findById(id)
