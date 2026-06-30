@@ -100,7 +100,8 @@ public class UserService {
         if (!passwordMatches(request.getPassword(), record.passwordHash)) throw new IllegalStateException("邮箱或密码错误");
         if (!record.activated) throw new IllegalStateException("请先激活账号");
         if ("已封禁".equals(record.status) && !banExpired(record.banUntil)) {
-            throw new IllegalStateException(banMessage(record.banReason, record.banUntil));
+            String untilStr = record.banUntil == null ? "" : "，解封日期：" + record.banUntil.toString();
+            throw new IllegalStateException("账号已被封禁：" + DbSupport.safe(record.banReason, "未填写原因") + untilStr);
         }
         if ("已封禁".equals(record.status) && banExpired(record.banUntil)) {
             jdbc.update("update users set status = '正常', ban_reason = null, ban_until = null where id = ?", record.user.getId());
@@ -211,8 +212,12 @@ public class UserService {
         if (reason == null || reason.trim().isEmpty() || until == null || until.trim().isEmpty()) {
             throw new IllegalStateException("封禁原因和封禁期限均为必填项");
         }
+        Date banUntil = Date.valueOf(until);
+        if (!banUntil.toLocalDate().isAfter(LocalDate.now())) {
+            throw new IllegalStateException("封禁截止日期必须在今天之后");
+        }
         jdbc.update("update users set status = '已封禁', ban_reason = ?, ban_until = ? where id = ?",
-                reason.trim(), Date.valueOf(until), userId);
+                reason.trim(), banUntil, userId);
         log(actorId, "BAN_USER", "USER", userId, reason);
     }
 
