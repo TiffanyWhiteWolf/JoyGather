@@ -53,6 +53,7 @@ export interface Activity {
   minAge?: number
   joinFields?: string[]
   offlineReason?: string
+  updatedAt?: string
 }
 
 export interface Team {

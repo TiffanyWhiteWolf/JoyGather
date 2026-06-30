@@ -102,11 +102,16 @@ class UsB04DraftTest extends TestBase {
     @DisplayName("US-B04-5: 重复提交不会创建重复审核任务")
     void shouldNotDuplicateReviewOnResubmit() {
         ActivityCreateRequest draftReq = filledDraftRequest();
+        draftReq.setCapacity(60);
         ActivityDto draft = activityService.saveDraft(draftReq, USER_ID);
 
         ActivityDto first = activityService.submitDraft(draft.getId(), USER_ID);
         ActivityDto second = activityService.submitDraft(draft.getId(), USER_ID);
         assertEquals(first.getStatus(), second.getStatus());
+        Integer taskCount = jdbc.queryForObject(
+                "select count(*) from review_tasks where type = '活动审核' and target_id = ?",
+                Integer.class, draft.getId());
+        assertEquals(1, taskCount);
     }
 
     private ActivityCreateRequest filledDraftRequest() {

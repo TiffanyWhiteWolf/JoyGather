@@ -180,14 +180,10 @@ public class ActivityService {
 
     @Transactional
     public ActivityDto submitDraft(String id, String userId) {
-        ActivityDto draft = requireActivity(id);
+        ActivityDto draft = lockActivity(id);
         if (!"草稿".equals(draft.getStatus())) return draft;
         if (userId != null && !userId.equals(draft.getOrganizer().getId())) throw new IllegalStateException("只能提交自己的草稿");
-        if (draft.getTitle() == null || draft.getTitle().trim().isEmpty() || draft.getLocation() == null || draft.getLocation().trim().isEmpty()
-                || draft.getDeadline() == null || draft.getStartAt() == null || draft.getEndAt() == null) {
-            throw new IllegalStateException("草稿信息不完整，请补全必填字段后提交");
-        }
-        if (LocalDateTime.now().isAfter(LocalDateTime.parse(draft.getDeadline()))) throw new IllegalStateException("报名截止时间已过，请修改后提交");
+        validateDraftForSubmit(draft);
         IntegrationService.ModerationResult moderation = integrationService == null
                 ? new IntegrationService.ModerationResult(draft.getCapacity() > 50 ? "REVIEW_REQUIRED" : "LOW_RISK", draft.getCapacity() > 50 ? "中" : "低", draft.getCapacity() > 50 ? "报名人数超过 50 人，转入人工审核" : "规则审核低风险", Collections.<String>emptyList())
                 : integrationService.moderateActivity(id, draft.getTitle(), draft.getSummary(), draft.getTags(), draft.getCapacity());
@@ -473,6 +469,7 @@ public class ActivityService {
                 activity.setMinAge(rs.getInt("min_age"));
                 activity.setJoinFields(DbSupport.split(rs.getString("join_fields")));
                 activity.setOfflineReason(rs.getString("offline_reason"));
+                activity.setUpdatedAt(formatDateTime(rs.getTimestamp("updated_at")));
                 activity.setTags(tagsFor(activity.getId()));
                 activity.setOrganizer(userService.findById(rs.getString("organizer_id")));
                 return activity;
@@ -506,6 +503,27 @@ public class ActivityService {
         LocalDateTime endAt = parseEndAt(request);
         LocalDateTime deadline = parseDeadline(request);
         if (startAt == null || endAt == null || deadline == null) throw new IllegalStateException("活动开始、结束和报名截止时间不能为空");
+        if (!endAt.isAfter(startAt)) throw new IllegalStateException("活动结束时间需要晚于开始时间");
+        if (!startAt.isAfter(LocalDateTime.now())) throw new IllegalStateException("活动开始时间需要晚于当前时间");
+        if (deadline.isAfter(startAt)) throw new IllegalStateException("报名截止时间不能晚于活动开始时间");
+    }
+
+    private void validateDraftForSubmit(ActivityDto draft) {
+        if (draft.getTitle() == null || draft.getTitle().trim().isEmpty() || "未命名草稿".equals(draft.getTitle())) {
+            throw new IllegalStateException("活动名称不能为空");
+        }
+        if (draft.getSummary() == null || draft.getSummary().trim().isEmpty() || "草稿暂未填写简介".equals(draft.getSummary())) {
+            throw new IllegalStateException("活动简介不能为空");
+        }
+        if (draft.getCategory() == null || draft.getCategory().trim().isEmpty()) throw new IllegalStateException("活动类型不能为空");
+        if (draft.getLocation() == null || draft.getLocation().trim().isEmpty()) throw new IllegalStateException("活动地点不能为空");
+        if (draft.getCapacity() < 2) throw new IllegalStateException("活动人数上限必须为大于等于2的整数");
+        if (draft.getStartAt() == null || draft.getEndAt() == null || draft.getDeadline() == null) {
+            throw new IllegalStateException("活动开始、结束和报名截止时间不能为空");
+        }
+        LocalDateTime startAt = LocalDateTime.parse(draft.getStartAt());
+        LocalDateTime endAt = LocalDateTime.parse(draft.getEndAt());
+        LocalDateTime deadline = LocalDateTime.parse(draft.getDeadline());
         if (!endAt.isAfter(startAt)) throw new IllegalStateException("活动结束时间需要晚于开始时间");
         if (!startAt.isAfter(LocalDateTime.now())) throw new IllegalStateException("活动开始时间需要晚于当前时间");
         if (deadline.isAfter(startAt)) throw new IllegalStateException("报名截止时间不能晚于活动开始时间");
