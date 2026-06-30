@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Building2, CheckCircle2, Eye, EyeOff, LockKeyhole, Mail, UserRound } from 'lucide-vue-next'
 import { apiGet, apiPost } from '@/lib/api'
@@ -24,6 +24,8 @@ const activationToken = ref('')
 const isRegister = computed(() => mode.value === 'register')
 const isAdminLogin = computed(() => route.query.role === 'admin' && !isRegister.value)
 
+watch(isAdminLogin, () => { error.value = '' })
+
 interface AuthResponse { token: string; user: User }
 interface ActivationResponse { userId: string; activationToken: string; status: string }
 
@@ -41,7 +43,7 @@ async function submit() {
       activationToken.value = result.activationToken
       submitted.value = true
     } else {
-      const result = await apiPost<AuthResponse>('/auth/login', { email: email.value, password: password.value })
+      const result = await apiPost<AuthResponse>('/auth/login', { email: email.value, password: password.value, adminLogin: isAdminLogin.value })
       localStorage.setItem('quju:token', result.token)
       localStorage.setItem('quju:session', JSON.stringify(result.user))
       window.dispatchEvent(new CustomEvent('quju:auth-changed'))
@@ -95,7 +97,7 @@ onMounted(async () => {
           <p v-if="error" class="auth-error">{{ error }}</p>
           <button class="auth-submit" type="submit">{{ isRegister ? '注册并发送激活邮件' : '登录' }}</button>
         </form>
-        <p class="admin-hint"><RouterLink v-if="!isAdminLogin" to="/auth?role=admin">管理员登录</RouterLink><template v-else>管理员账号由系统预先创建，不提供公开注册。</template></p>
+        <p class="admin-hint"><RouterLink v-if="!isAdminLogin" to="/auth?role=admin">管理员登录</RouterLink><template v-else><span>管理员账号由系统预先创建，不提供公开注册。</span><RouterLink to="/auth" class="back-link">返回用户登录 / 注册</RouterLink></template></p>
       </template>
       <template v-else><div class="activation"><CheckCircle2 /><h2>激活邮件已发送</h2><p>我们已向 <b>{{ email }}</b> 发送激活链接。激活后即可登录；商家资料会在激活后进入人工审核。</p><button class="auth-submit" @click="activateNow">使用本地激活链接完成激活</button><button class="auth-secondary" @click="switchMode('login')">返回登录</button></div></template>
     </main>
@@ -104,7 +106,7 @@ onMounted(async () => {
 
 <style scoped>
 .auth-page{min-height:100vh;padding:40px;display:grid;grid-template-columns:1fr minmax(420px,520px);align-items:center;gap:8vw;background:linear-gradient(135deg,#172238 0 46%,#f7f5f1 46%)}.auth-back{position:fixed;left:32px;top:25px;color:#c7ced9;display:flex;align-items:center;gap:6px;font-size:12px}.auth-side{max-width:520px;margin-left:8vw;color:#fff}.brand-light{display:flex;align-items:center;gap:12px;font-size:24px}.auth-side h1{margin:45px 0 18px;font-size:52px;line-height:1.15;letter-spacing:-.05em}.auth-side>p{max-width:440px;color:#b9c1cf;line-height:1.8}.auth-proof{display:flex;gap:45px;margin-top:55px}.auth-proof span{font-size:22px;font-weight:900}.auth-proof small{display:block;margin-top:5px;color:#8993a4;font-size:9px;font-weight:500}.auth-card{padding:42px;background:#fff;border:1px solid var(--color-line);border-radius:24px;box-shadow:var(--shadow-card)}.auth-tabs{padding:4px;border-radius:12px;background:var(--color-bg);display:flex}.auth-tabs button{flex:1;padding:10px;border:0;border-radius:9px;background:none;font-weight:800;font-size:16px}.auth-tabs button.active{background:#fff;box-shadow:var(--shadow-soft);color:var(--color-primary)}.auth-title{margin:28px 0 20px}.auth-title>span{color:var(--color-primary);font-size:15px;font-weight:900;letter-spacing:.12em}.auth-title h2{margin:8px 0;font-size:28px}.role-switch{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px}.role-switch button{padding:12px;border:1px solid var(--color-line);border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;gap:7px;font-size:13px}.role-switch svg{width:17px}.role-switch button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary);font-weight:800}form label{display:block;margin-bottom:14px}form label>span{display:block;margin-bottom:6px;font-size:13px;font-weight:800}form label>div{padding:0 12px;border:1px solid var(--color-line);border-radius:10px;display:flex;align-items:center;gap:8px}form label>div:focus-within{border-color:var(--color-primary);box-shadow:0 0 0 3px var(--color-primary-soft)}form label svg{width:16px;color:var(--color-ink-soft)}form input:not(.file-input){min-width:0;flex:1;padding:12px 0;border:0;outline:0;font-size:14px}form label button{border:0;background:none}.file-input{width:100%;padding:10px;border:1px dashed var(--color-line);border-radius:9px}.file-input+small{display:block;margin-top:5px;color:var(--color-ink-soft);font-size:8px}.auth-submit{width:100%;padding:13px;border:0;border-radius:10px;background:var(--color-primary);color:#fff;font-weight:900;font-size:15px;box-shadow:0 8px 20px rgba(255,107,69,.2)}.auth-error{padding:9px;border-radius:8px;background:#ffeaed;color:var(--color-danger);font-size:10px}.admin-hint{margin:16px 0 0;text-align:center;color:var(--color-ink-soft);font-size:9px}.activation{text-align:center;padding:35px 10px}.activation>svg{width:65px;height:65px;color:var(--color-mint)}.activation p{margin:15px 0 28px;color:var(--color-ink-soft);font-size:12px;line-height:1.8}
-.auth-secondary{width:100%;margin-top:10px;padding:12px;border:1px solid var(--color-line);border-radius:10px;background:#fff;color:var(--color-ink);font-weight:800}.admin-hint{font-size:13px}.admin-hint a{color:var(--color-primary);font-weight:800}.auth-error{margin:14px 0;font-size:14px;line-height:1.6}
+.auth-secondary{width:100%;margin-top:10px;padding:12px;border:1px solid var(--color-line);border-radius:10px;background:#fff;color:var(--color-ink);font-weight:800}.admin-hint{font-size:13px}.admin-hint a{color:var(--color-primary);font-weight:800}.admin-hint .back-link{display:block;margin-top:6px}.auth-error{margin:14px 0;font-size:14px;line-height:1.6}
 .auth-page{grid-template-columns:minmax(380px,1fr) minmax(420px,520px);gap:7vw;background:linear-gradient(90deg,#172238 0 50%,#f7f5f1 50%)}.auth-side{max-width:440px;margin-left:5vw}.auth-side h1{font-size:46px}
 @media(max-width:900px){.auth-page{padding:70px 20px 30px;grid-template-columns:1fr;background:linear-gradient(170deg,#172238 0 30%,#f7f5f1 30%)}.auth-side{margin:0;text-align:center}.auth-side h1{margin:20px 0;font-size:34px}.auth-side>p,.auth-proof{display:none}.brand-light{justify-content:center}.auth-card{width:min(100%,520px);margin:auto}}@media(max-width:500px){.auth-card{padding:28px 20px}.auth-page{padding-left:12px;padding-right:12px}.auth-back{left:18px}.role-switch{grid-template-columns:1fr}}
 </style>
