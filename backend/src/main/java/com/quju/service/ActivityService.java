@@ -496,7 +496,7 @@ public class ActivityService {
         if (request.getDate() == null || request.getDate().trim().isEmpty()) throw new IllegalStateException("活动日期不能为空");
         if (request.getTime() == null && (request.getStartTime() == null || request.getEndTime() == null)) throw new IllegalStateException("活动时间不能为空");
         if (request.getLocation() == null || request.getLocation().trim().isEmpty()) throw new IllegalStateException("活动地点不能为空");
-        if (request.getCapacity() < 2) throw new IllegalStateException("活动人数上限至少为2人");
+        if (request.getCapacity() < 2) throw new IllegalStateException("活动人数上限必须为大于等于2的整数");
         LocalDateTime startAt = parseStartAt(request);
         LocalDateTime endAt = parseEndAt(request);
         LocalDateTime deadline = parseDeadline(request);
