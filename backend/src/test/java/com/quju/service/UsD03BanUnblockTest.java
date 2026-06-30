@@ -27,6 +27,14 @@ class UsD03BanUnblockTest extends TestBase {
         assertThrows(IllegalStateException.class,
                 () -> userService.ban(USER_ID, "违规", "", ADMIN_ID));
 
+        // 封禁日期不能是今天或过去的日期
+        String yesterday = java.time.LocalDate.now().minusDays(1).toString();
+        assertThrows(IllegalStateException.class,
+                () -> userService.ban(USER_ID, "违规", yesterday, ADMIN_ID));
+        String today = java.time.LocalDate.now().toString();
+        assertThrows(IllegalStateException.class,
+                () -> userService.ban(USER_ID, "违规", today, ADMIN_ID));
+
         // 正常封禁
         userService.ban(USER_ID, "发布违规内容", "2026-12-31", ADMIN_ID);
         UserDto banned = userService.findById(USER_ID);
@@ -43,6 +51,8 @@ class UsD03BanUnblockTest extends TestBase {
         Exception ex = assertThrows(IllegalStateException.class,
                 () -> userService.login(loginRequest(USER_EMAIL, USER_PASS)));
         assertTrue(ex.getMessage().contains("封禁"));
+        assertTrue(ex.getMessage().contains("违规"));
+        assertTrue(ex.getMessage().contains("2026-12-31"));
     }
 
     @Test
