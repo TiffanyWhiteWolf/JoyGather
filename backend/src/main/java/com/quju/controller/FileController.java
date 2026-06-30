@@ -38,6 +38,13 @@ public class FileController {
         return ApiResponse.success(fileStorageService.upload(file, user.getId()));
     }
 
+    @PostMapping("/avatar")
+    public ApiResponse<CommonDtos.FileResponse> avatar(@RequestParam("file") MultipartFile file,
+                                                       @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto user = userService.requireToken(authorization);
+        return ApiResponse.success(fileStorageService.uploadAvatar(file, user.getId()));
+    }
+
     @GetMapping("/{id}/content")
     public ResponseEntity<InputStreamResource> content(@PathVariable String id) throws Exception {
         FileStorageService.LocalFile file = fileStorageService.localFile(id);

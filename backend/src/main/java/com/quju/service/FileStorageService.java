@@ -72,6 +72,16 @@ public class FileStorageService {
         return fileResponse(id);
     }
 
+    public CommonDtos.FileResponse uploadAvatar(MultipartFile file, String ownerId) {
+        if (file == null || file.isEmpty()) throw new IllegalStateException("请选择头像图片");
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.toLowerCase().startsWith("image/")) {
+            throw new IllegalStateException("头像只能上传图片文件");
+        }
+        if (file.getSize() > 3 * 1024 * 1024) throw new IllegalStateException("头像图片不能超过 3MB");
+        return upload(file, ownerId);
+    }
+
     public CommonDtos.FileResponse fileResponse(String id) {
         return jdbc.queryForObject("select * from files where id = ?", (rs, rowNum) -> {
             CommonDtos.FileResponse response = new CommonDtos.FileResponse();
