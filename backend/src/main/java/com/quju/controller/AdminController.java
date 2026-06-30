@@ -146,6 +146,13 @@ public class AdminController {
         return ApiResponse.success(teamService.list(query, true));
     }
 
+    @GetMapping("/teams/{id}")
+    public ApiResponse<TeamDto> teamDetail(@PathVariable String id,
+                                           @RequestHeader(value = "Authorization", required = false) String authorization) {
+        userService.requireAdmin(authorization);
+        return ApiResponse.success(teamService.adminDetail(id));
+    }
+
     @PostMapping("/teams/{id}/stop")
     public ApiResponse<Void> stopTeam(@PathVariable String id, @RequestBody AdminDtos.ReasonRequest request,
                                       @RequestHeader(value = "Authorization", required = false) String authorization) {

@@ -137,6 +137,7 @@ public class ActivityService {
     @Transactional
     public ActivityDto create(ActivityCreateRequest request, String organizerId) {
         validateForSubmit(request);
+        ensureTeamCanAcceptActivity(request.getTeamId());
         String id = DbSupport.id("act");
         IntegrationService.ModerationResult moderation = integrationService == null
                 ? localModeration(request)
@@ -419,6 +420,9 @@ public class ActivityService {
         List<ActivityDto> result = new ArrayList<ActivityDto>();
         for (ActivityDto item : items) {
             String haystack = (item.getTitle() + item.getSummary() + item.getDescription() + DbSupport.join(item.getTags())).toLowerCase(Locale.CHINA);
+            if (item.getOrganizer() != null) {
+                haystack += (item.getOrganizer().getNickname() + item.getOrganizer().getEmail() + item.getOrganizer().getId()).toLowerCase(Locale.CHINA);
+            }
             if (!normalized.isEmpty() && !haystack.contains(normalized)) continue;
             if (category != null && !category.isEmpty() && !category.equals(item.getCategory())) continue;
             if (status != null && !status.isEmpty() && !status.startsWith("全部") && !status.equals(item.getStatus())) continue;
@@ -528,6 +532,13 @@ public class ActivityService {
         if (!endAt.isAfter(startAt)) throw new IllegalStateException("活动结束时间需要晚于开始时间");
         if (!startAt.isAfter(LocalDateTime.now())) throw new IllegalStateException("活动开始时间需要晚于当前时间");
         if (deadline.isAfter(startAt)) throw new IllegalStateException("报名截止时间不能晚于活动开始时间");
+    }
+
+    private void ensureTeamCanAcceptActivity(String teamId) {
+        if (teamId == null || teamId.trim().isEmpty()) return;
+        List<String> statuses = jdbc.queryForList("select status from teams where id = ?", String.class, teamId);
+        if (statuses.isEmpty()) throw new NoSuchElementException("小队不存在");
+        if (!"正常".equals(statuses.get(0))) throw new IllegalStateException("小队已停用，暂不可新增活动");
     }
 
     private void validateDraftForSubmit(ActivityDto draft) {

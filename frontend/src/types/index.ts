@@ -69,6 +69,25 @@ export interface Team {
   status?: '正常' | '已停用'
   stopReason?: string
   ownerId?: string
+  ownerNickname?: string
+  memberRecords?: Record<string, unknown>[]
+  activityRecords?: Record<string, unknown>[]
+  reportRecords?: Record<string, unknown>[]
+}
+
+export interface MerchantApplication {
+  id: string
+  userId?: string
+  merchantName?: string
+  licenseName?: string
+  licenseUrl?: string
+  status: ReviewStatus
+  reason?: string
+  submittedAt?: string
+  reviewedAt?: string
+  reviewerId?: string
+  email?: string
+  nickname?: string
   myRole?: '队长' | '管理员' | '成员'
 }
 
