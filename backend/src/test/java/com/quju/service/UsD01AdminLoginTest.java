@@ -28,7 +28,7 @@ class UsD01AdminLoginTest extends TestBase {
     @Test
     @DisplayName("US-D01-2: 管理员使用账号密码登录后台")
     void shouldLoginWithAdminCredentials() {
-        AuthDtos.AuthResponse auth = userService.login(loginRequest(ADMIN_EMAIL, USER_PASS));
+        AuthDtos.AuthResponse auth = userService.login(adminLoginRequest(ADMIN_EMAIL, USER_PASS));
         assertNotNull(auth.getToken());
 
         // requireAdmin 校验通过
@@ -45,7 +45,7 @@ class UsD01AdminLoginTest extends TestBase {
     @Test
     @DisplayName("US-D01-3: 管理员可修改本人登录密码")
     void shouldAllowAdminToChangePassword() {
-        AuthDtos.AuthResponse auth = userService.login(loginRequest(ADMIN_EMAIL, USER_PASS));
+        AuthDtos.AuthResponse auth = userService.login(adminLoginRequest(ADMIN_EMAIL, USER_PASS));
 
         AuthDtos.ChangePasswordRequest pwReq = new AuthDtos.ChangePasswordRequest();
         pwReq.setOldPassword(USER_PASS);
@@ -53,12 +53,12 @@ class UsD01AdminLoginTest extends TestBase {
         userService.changePassword("Bearer " + auth.getToken(), pwReq);
 
         // 新密码可登录
-        AuthDtos.AuthResponse newLogin = userService.login(loginRequest(ADMIN_EMAIL, "newAdminPass123"));
+        AuthDtos.AuthResponse newLogin = userService.login(adminLoginRequest(ADMIN_EMAIL, "newAdminPass123"));
         assertNotNull(newLogin.getToken());
 
         // 旧密码失效
         assertThrows(IllegalStateException.class,
-                () -> userService.login(loginRequest(ADMIN_EMAIL, USER_PASS)));
+                () -> userService.login(adminLoginRequest(ADMIN_EMAIL, USER_PASS)));
     }
 
     @Test
@@ -69,7 +69,7 @@ class UsD01AdminLoginTest extends TestBase {
         assertTrue(ex1.getMessage().contains("密码错误"));
 
         Exception ex2 = assertThrows(IllegalStateException.class,
-                () -> userService.login(loginRequest(ADMIN_EMAIL, "wrongpass")));
+                () -> userService.login(adminLoginRequest(ADMIN_EMAIL, "wrongpass")));
         assertTrue(ex2.getMessage().contains("密码错误"));
     }
 }

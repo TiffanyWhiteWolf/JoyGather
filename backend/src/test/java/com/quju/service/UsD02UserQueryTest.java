@@ -59,7 +59,7 @@ class UsD02UserQueryTest extends TestBase {
     @DisplayName("US-D02-3: 管理员不可修改用户个人资料和密码")
     void shouldNotAllowAdminToModifyUserProfile() {
         // 管理员登录
-        String adminToken = userService.login(loginRequest(ADMIN_EMAIL, USER_PASS)).getToken();
+        String adminToken = userService.login(adminLoginRequest(ADMIN_EMAIL, USER_PASS)).getToken();
         // requireAdmin 通过但 updateProfile 使用 token 对应的用户身份
         // 管理员无法直接调用 updateProfile 修改普通用户资料（只修改自己的）
         // 这是架构层面的约束验证

@@ -98,6 +98,8 @@ public class UserService {
             throw new IllegalStateException("邮箱或密码错误");
         }
         if (!passwordMatches(request.getPassword(), record.passwordHash)) throw new IllegalStateException("邮箱或密码错误");
+        if (request.isAdminLogin() && !"管理员".equals(record.user.getRole())) throw new IllegalStateException("非管理员账号，无法使用管理员后台登录");
+        if (!request.isAdminLogin() && "管理员".equals(record.user.getRole())) throw new IllegalStateException("管理员账号无法在用户登录页面登录");
         if (!record.activated) throw new IllegalStateException("请先激活账号");
         if ("已封禁".equals(record.status) && !banExpired(record.banUntil)) {
             String untilStr = record.banUntil == null ? "" : "，解封日期：" + record.banUntil.toString();
