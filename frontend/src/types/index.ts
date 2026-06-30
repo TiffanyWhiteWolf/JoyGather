@@ -52,6 +52,7 @@ export interface Activity {
   safetyNote?: string
   minAge?: number
   joinFields?: string[]
+  offlineReason?: string
   updatedAt?: string
 }
 
@@ -106,6 +107,7 @@ export interface ReviewTask {
   reason: string
   submittedAt: string
   status: ReviewStatus
+  targetId: string
 }
 
 export interface Message {

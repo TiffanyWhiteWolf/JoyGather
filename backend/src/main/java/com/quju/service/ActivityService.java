@@ -96,6 +96,10 @@ public class ActivityService {
         return jdbc.query("select * from activities where status = '草稿' and organizer_id = ? order by updated_at desc", activityMapper(), userId);
     }
 
+    public List<ActivityDto> findMyActivities(String userId) {
+        return jdbc.query("select * from activities where organizer_id = ? and status <> '草稿' order by updated_at desc", activityMapper(), userId);
+    }
+
     public Map<String, String> myRegistrationStatus(String userId) {
         Map<String, String> result = new java.util.LinkedHashMap<String, String>();
         List<Map<String, Object>> rows = jdbc.queryForList("select activity_id,status from registrations where user_id = ? and status in ('已报名','候补中','已签到')", userId);
@@ -464,6 +468,7 @@ public class ActivityService {
                 activity.setSafetyNote(rs.getString("safety_note"));
                 activity.setMinAge(rs.getInt("min_age"));
                 activity.setJoinFields(DbSupport.split(rs.getString("join_fields")));
+                activity.setOfflineReason(rs.getString("offline_reason"));
                 activity.setUpdatedAt(formatDateTime(rs.getTimestamp("updated_at")));
                 activity.setTags(tagsFor(activity.getId()));
                 activity.setOrganizer(userService.findById(rs.getString("organizer_id")));

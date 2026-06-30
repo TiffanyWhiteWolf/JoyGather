@@ -28,10 +28,10 @@ const suggestedInterests = ['徒步', '骑行', '桌游', '摄影', '城市探�
 const profile = reactive({ nickname: '', avatar: '', gender: '', birthday: '', city: '杭州', bio: '', interests: '' })
 onMounted(async () => {
   try {
-    const [user, rows] = await Promise.all([apiGet<User>('/auth/me'), apiGet<Activity[]>('/activities')])
+    const [user, rows] = await Promise.all([apiGet<User>('/auth/me'), apiGet<Activity[]>('/activities/my')])
     currentUser.value = user
     Object.assign(profile, { nickname: user.nickname, avatar: user.avatar, gender: user.gender || '', birthday: user.birthday || '', city: user.city, bio: user.bio, interests: user.interests.join('、') })
-    activities.value = rows.filter(item => item.organizer.id === user.id).slice(0, 4)
+    activities.value = rows
   } catch {
     router.push('/auth')
   }

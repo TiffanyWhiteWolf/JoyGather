@@ -278,7 +278,18 @@ onMounted(async () => {
   if (cloneId) {
     const source = await apiGet<Activity>(`/activities/${cloneId}`)
     if (source) {
-      Object.assign(form, { id: `draft-${Date.now()}`, title: `${source.title}（复刻）`, category: source.category, tags: source.tags.join('、'), summary: source.description, location: source.location, district: source.district, capacity: source.capacity, price: source.price })
+      Object.assign(form, {
+        id: `draft-${Date.now()}`, title: `${source.title}（复刻）`, category: source.category,
+        tags: source.tags.join('、'), summary: source.description,
+        date: source.date,
+        startTime: source.startAt?.slice(11, 16) || '',
+        endTime: source.endAt?.slice(11, 16) || '',
+        deadline: source.deadline || '',
+        location: source.location, district: source.district, capacity: source.capacity, price: source.price,
+        minAge: source.minAge || 16,
+        safetyNote: source.safetyNote || '',
+        joinFields: source.joinFields || ['真实姓名', '手机号码'],
+      })
       longitude.value = Number(source.longitude)
       latitude.value = Number(source.latitude)
     }
