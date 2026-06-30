@@ -12,7 +12,7 @@ const route = useRoute()
 const router = useRouter()
 const step = ref(1)
 const submitted = ref(false)
-const error = ref('')
+const submitError = ref('')
 const longitude = ref(120.15507)
 const latitude = ref(30.274085)
 const categories: ActivityCategory[] = ['城市探索', '户外运动', '桌游聚会', '学习交流', '运动健身', '公益活动']
@@ -53,6 +53,37 @@ interface ActivityRequest {
   submitToken: string
 }
 
+type FieldErrorKey =
+  | 'title'
+  | 'tags'
+  | 'summary'
+  | 'date'
+  | 'deadline'
+  | 'startTime'
+  | 'endTime'
+  | 'location'
+  | 'capacity'
+  | 'safetyNote'
+
+const fieldErrors = reactive<Record<FieldErrorKey, string>>({
+  title: '',
+  tags: '',
+  summary: '',
+  date: '',
+  deadline: '',
+  startTime: '',
+  endTime: '',
+  location: '',
+  capacity: '',
+  safetyNote: '',
+})
+
+function clearFieldErrors() {
+  (Object.keys(fieldErrors) as FieldErrorKey[]).forEach((key) => {
+    fieldErrors[key] = ''
+  })
+}
+
 function useTemplate(index: number) {
   const item = templates[index]
   Object.assign(form, { category: item.category, title: item.title, tags: item.tags, summary: item.summary, safetyNote: item.safety })
@@ -60,14 +91,43 @@ function useTemplate(index: number) {
 }
 
 function validateCurrentStep() {
-  error.value = ''
-  if (step.value === 1 && (!form.title.trim() || !form.summary.trim() || !form.tags.trim())) error.value = '请完整填写活动名称、标签和简介。'
-  if (step.value === 2 && (!form.date || !form.startTime || !form.endTime || !form.location.trim() || !form.deadline)) error.value = '请完整填写活动时间、报名截止时间和集合地点。'
-  if (step.value === 2 && form.startTime && form.endTime && form.startTime >= form.endTime) error.value = '活动结束时间需要晚于开始时间。'
-  if (step.value === 2 && form.date && form.startTime && new Date(`${form.date}T${form.startTime}:00`).getTime() <= Date.now()) error.value = '活动开始时间需要晚于当前时间。'
-  if (step.value === 2 && form.date && form.startTime && form.deadline && new Date(form.deadline).getTime() > new Date(`${form.date}T${form.startTime}:00`).getTime()) error.value = '报名截止时间不能晚于活动开始时间。'
-  if (step.value === 3 && (form.capacity < 2 || !form.safetyNote.trim())) error.value = '人数上限至少为 2 人，并请补充安全须知。'
-  return !error.value
+  submitError.value = ''
+  clearFieldErrors()
+
+  if (step.value === 1) {
+    if (!form.title.trim()) fieldErrors.title = '请输入活动名称。'
+    if (!form.tags.trim()) fieldErrors.tags = '请输入活动标签。'
+    if (!form.summary.trim()) fieldErrors.summary = '请输入活动简介。'
+  }
+
+  if (step.value === 2) {
+    if (!form.date) fieldErrors.date = '请选择活动日期。'
+    if (!form.deadline) fieldErrors.deadline = '请选择报名截止时间。'
+    if (!form.startTime) fieldErrors.startTime = '请选择开始时间。'
+    if (!form.endTime) fieldErrors.endTime = '请选择结束时间。'
+    if (!form.location.trim()) fieldErrors.location = '请输入集合地点。'
+
+    if (form.startTime && form.endTime && form.startTime >= form.endTime) {
+      fieldErrors.endTime = '活动结束时间需要晚于开始时间。'
+    }
+    if (form.date && form.startTime && new Date(`${form.date}T${form.startTime}:00`).getTime() <= Date.now()) {
+      fieldErrors.startTime = '活动开始时间需要晚于当前时间。'
+    }
+    if (form.date && form.startTime && form.deadline && new Date(form.deadline).getTime() > new Date(`${form.date}T${form.startTime}:00`).getTime()) {
+      fieldErrors.deadline = '报名截止时间不能晚于活动开始时间。'
+    }
+  }
+
+  if (step.value === 3) {
+    if (!Number.isInteger(form.capacity) || form.capacity < 2) {
+      fieldErrors.capacity = '人数上限必须为大于等于 2 的整数。'
+    }
+    if (!form.safetyNote.trim()) {
+      fieldErrors.safetyNote = '请补充安全须知。'
+    }
+  }
+
+  return !(Object.values(fieldErrors).some(Boolean))
 }
 
 function splitTags() {
@@ -109,7 +169,7 @@ async function next() {
       await app.refreshUserState()
       submitted.value = true
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '创建活动失败，请稍后重试'
+      submitError.value = err instanceof Error ? err.message : '创建活动失败，请稍后重试'
     }
   }
 }
@@ -119,7 +179,7 @@ async function save() {
     await apiPost<Activity>('/activities/drafts', toActivityRequest())
     app.saveDraft({ ...form })
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '保存草稿失败'
+    submitError.value = err instanceof Error ? err.message : '保存草稿失败'
   }
 }
 function toggleField(field: string) {
@@ -161,24 +221,24 @@ onMounted(async () => {
 
         <template v-if="step===1">
           <div class="templates"><button v-for="(item,i) in templates" :key="item.name" @click="useTemplate(i)"><ClipboardCopy :size="16" /><span><b>{{ item.name }}</b><small>一键填充常用内容</small></span></button></div>
-          <div class="input-group"><label>活动名称 *</label><input v-model.trim="form.title" class="input" maxlength="30" placeholder="例如：落日以后，沿运河散步" /><small>{{ form.title.length }} / 30</small></div>
-          <div class="form-grid"><div class="input-group"><label>活动类型 *</label><select v-model="form.category" class="select"><option v-for="item in categories" :key="item">{{ item }}</option></select></div><div class="input-group"><label>兴趣标签 *</label><input v-model.trim="form.tags" class="input" placeholder="用顿号分隔，最多 5 个" /></div></div>
-          <div class="input-group"><label>活动简介 *</label><textarea v-model.trim="form.summary" class="textarea" maxlength="500" placeholder="活动亮点、流程和适合的人群"></textarea><small>{{ form.summary.length }} / 500</small></div>
+          <div class="input-group"><label>活动名称 *</label><input v-model.trim="form.title" class="input" maxlength="30" placeholder="例如：落日以后，沿运河散步" /><small>{{ form.title.length }} / 30</small><p v-if="fieldErrors.title" class="field-error">{{ fieldErrors.title }}</p></div>
+          <div class="form-grid"><div class="input-group"><label>活动类型 *</label><select v-model="form.category" class="select"><option v-for="item in categories" :key="item">{{ item }}</option></select></div><div class="input-group"><label>兴趣标签 *</label><input v-model.trim="form.tags" class="input" placeholder="用顿号分隔，最多 5 个" /><p v-if="fieldErrors.tags" class="field-error">{{ fieldErrors.tags }}</p></div></div>
+          <div class="input-group"><label>活动简介 *</label><textarea v-model.trim="form.summary" class="textarea" maxlength="500" placeholder="活动亮点、流程和适合的人群"></textarea><small>{{ form.summary.length }} / 500</small><p v-if="fieldErrors.summary" class="field-error">{{ fieldErrors.summary }}</p></div>
         </template>
 
         <template v-else-if="step===2">
-          <div class="form-grid"><div class="input-group"><label>活动日期 *</label><input v-model="form.date" class="input" type="date" /></div><div class="input-group"><label>报名截止 *</label><input v-model="form.deadline" class="input" type="datetime-local" /></div></div>
-          <div class="form-grid"><div class="input-group"><label>开始时间 *</label><input v-model="form.startTime" class="input" type="time" /></div><div class="input-group"><label>结束时间 *</label><input v-model="form.endTime" class="input" type="time" /></div></div>
-          <div class="form-grid"><div class="input-group"><label>城区 *</label><select v-model="form.district" class="select"><option v-for="item in ['拱墅区','西湖区','上城区','滨江区','余杭区']" :key="item">{{ item }}</option></select></div><div class="input-group"><label>集合地点 *</label><input v-model.trim="form.location" class="input" placeholder="输入可被准确找到的地点" /></div></div>
+          <div class="form-grid"><div class="input-group"><label>活动日期 *</label><input v-model="form.date" class="input" type="date" /><p v-if="fieldErrors.date" class="field-error">{{ fieldErrors.date }}</p></div><div class="input-group"><label>报名截止 *</label><input v-model="form.deadline" class="input" type="datetime-local" /><p v-if="fieldErrors.deadline" class="field-error">{{ fieldErrors.deadline }}</p></div></div>
+          <div class="form-grid"><div class="input-group"><label>开始时间 *</label><input v-model="form.startTime" class="input" type="time" /><p v-if="fieldErrors.startTime" class="field-error">{{ fieldErrors.startTime }}</p></div><div class="input-group"><label>结束时间 *</label><input v-model="form.endTime" class="input" type="time" /><p v-if="fieldErrors.endTime" class="field-error">{{ fieldErrors.endTime }}</p></div></div>
+          <div class="form-grid"><div class="input-group"><label>城区 *</label><select v-model="form.district" class="select"><option v-for="item in ['拱墅区','西湖区','上城区','滨江区','余杭区']" :key="item">{{ item }}</option></select></div><div class="input-group"><label>集合地点 *</label><input v-model.trim="form.location" class="input" placeholder="输入可被准确找到的地点" /><p v-if="fieldErrors.location" class="field-error">{{ fieldErrors.location }}</p></div></div>
           <LocationPicker @select="selectLocation" />
           <div class="map-picker"><MapPin /><div><b>地图选点已开启</b><p>当前坐标：{{ latitude.toFixed(5) }}, {{ longitude.toFixed(5) }} · {{ form.location || '点击地图选择集合点' }}</p></div><button @click="selectLocation({ location:'桥西历史文化街区游客中心', district:'拱墅区', longitude:120.139863, latitude:30.318332 })">选用推荐点位</button></div>
         </template>
 
         <template v-else-if="step===3">
-          <div class="form-grid"><div class="input-group"><label>人数上限 *</label><input v-model.number="form.capacity" class="input" type="number" min="2" max="500" /></div><div class="input-group"><label>活动费用（元）</label><input v-model.number="form.price" class="input" type="number" min="0" /></div></div>
+          <div class="form-grid"><div class="input-group"><label>人数上限 *</label><input v-model.number="form.capacity" class="input" type="number" min="2" max="500" step="1" /><p v-if="fieldErrors.capacity" class="field-error">{{ fieldErrors.capacity }}</p></div><div class="input-group"><label>活动费用（元）</label><input v-model.number="form.price" class="input" type="number" min="0" /></div></div>
           <div class="form-grid"><div class="input-group"><label>最低年龄</label><input v-model.number="form.minAge" class="input" type="number" min="0" max="100" /></div><div class="input-group"><label>审核方式</label><div class="review-mode"><ShieldCheck :size="18" /><span><b>{{ reviewMode }}</b><small>{{ form.capacity > 50 ? '超过 50 人按规则转人工' : '提交后进行内容安全检查' }}</small></span></div></div></div>
           <div class="input-group"><label>报名信息</label><div class="field-checks"><button v-for="item in ['真实姓名','手机号码','紧急联系人','身份证号']" :key="item" :class="{active:form.joinFields.includes(item)}" @click="toggleField(item)"><Check :size="14" />{{ item }}</button></div></div>
-          <div class="input-group"><label>安全须知 *</label><textarea v-model.trim="form.safetyNote" class="textarea" placeholder="装备、天气、医疗、紧急联系人等必要说明"></textarea></div>
+          <div class="input-group"><label>安全须知 *</label><textarea v-model.trim="form.safetyNote" class="textarea" placeholder="装备、天气、医疗、紧急联系人等必要说明"></textarea><p v-if="fieldErrors.safetyNote" class="field-error">{{ fieldErrors.safetyNote }}</p></div>
         </template>
 
         <template v-else>
@@ -186,7 +246,7 @@ onMounted(async () => {
           <label class="submit-agreement"><input type="checkbox" checked /> 我确认活动信息真实，并同意平台内容与安全规范</label>
         </template>
 
-        <p v-if="error" class="form-error">{{ error }}</p>
+        <p v-if="submitError" class="form-error">{{ submitError }}</p>
         <div class="form-actions"><button v-if="step>1" class="btn btn-outline" @click="step--">上一步</button><button class="btn btn-primary" @click="next">{{ step===4?'提交审核':'保存并继续' }}</button></div>
       </section>
       <aside><div class="ai-helper"><Sparkles /><h3>没想好怎么写？</h3><p>AI 可以生成可继续修改的标题、亮点与活动流程。</p><RouterLink to="/ai-planner">让 AI 帮我策划 →</RouterLink></div><div class="tips"><b>发布前小提示</b><p>✓ 地点可被参与者清楚找到</p><p>✓ 截止时间早于活动开始</p><p>✓ 户外活动写明安全须知</p><p>✓ 超过 50 人将人工审核</p></div></aside>
@@ -196,5 +256,6 @@ onMounted(async () => {
 
 <style scoped>
 .create-page{padding:26px 0 70px}.create-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px}.create-head>a{display:flex;align-items:center;gap:5px;color:var(--color-ink-soft);font-size:13px}.create-head>div{display:flex;align-items:center;gap:12px}.create-head span{color:var(--color-ink-soft);font-size:10px}.stepper{display:flex;justify-content:center;margin-bottom:30px}.stepper button{position:relative;width:150px;border:0;background:none;display:flex;align-items:center;gap:8px;color:#aaa;font-size:11px;cursor:pointer}.stepper button:not(:last-child):after{content:'';position:absolute;right:8px;width:35px;height:1px;background:var(--color-line)}.stepper span{width:26px;height:26px;border-radius:50%;background:#ddd;display:grid;place-items:center}.stepper .active{color:var(--color-ink)}.stepper .active span{background:var(--color-primary);color:#fff}.create-layout{display:grid;grid-template-columns:1fr 280px;gap:20px;align-items:start}.panel{padding:36px}.form-title h1{margin:3px 0 8px;font-size:29px}.form-title p{color:var(--color-ink-soft)}.input-group{margin:18px 0}.input-group small{margin-top:4px;text-align:right;color:var(--color-ink-soft);font-size:9px}.templates{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:22px 0}.templates button{padding:12px;border:1px solid var(--color-line);border-radius:10px;background:var(--color-bg);display:flex;align-items:center;gap:8px;text-align:left;cursor:pointer}.templates svg{color:var(--color-primary)}.templates span{display:flex;flex-direction:column}.templates b{font-size:11px}.templates small{margin-top:3px;color:var(--color-ink-soft);font-size:8px}.map-picker{padding:18px;border:1px dashed var(--color-primary);border-radius:13px;background:var(--color-primary-soft);display:flex;align-items:center;gap:12px}.map-picker>svg{color:var(--color-primary)}.map-picker div{flex:1}.map-picker b{font-size:12px}.map-picker p{margin:4px 0 0;color:var(--color-ink-soft);font-size:10px}.map-picker button{border:0;background:#fff;border-radius:8px;padding:8px;font-size:9px;font-weight:700}.review-mode{min-height:47px;padding:9px 12px;border-radius:10px;background:var(--color-mint-soft);display:flex;align-items:center;gap:8px;color:var(--color-mint)}.review-mode span{display:flex;flex-direction:column}.review-mode b{font-size:11px}.review-mode small{font-size:8px;text-align:left}.field-checks{display:flex;flex-wrap:wrap;gap:7px}.field-checks button{padding:8px 10px;border:1px solid var(--color-line);border-radius:8px;background:#fff;color:var(--color-ink-soft);display:flex;align-items:center;gap:4px;font-size:10px}.field-checks button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary)}.preview-card{margin-top:22px;padding:25px;border:1px solid var(--color-line);border-radius:15px;background:var(--color-bg)}.preview-card>div:first-child{display:flex;justify-content:space-between;color:var(--color-primary);font-size:11px;font-weight:800}.preview-card h2{margin:14px 0 8px}.preview-card>p{color:var(--color-ink-soft);line-height:1.7}.preview-card dl{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:22px 0 0}.preview-card dl>div{padding:12px;background:#fff;border-radius:9px}.preview-card dt{display:flex;align-items:center;gap:5px;color:var(--color-ink-soft);font-size:9px}.preview-card dt svg{width:14px}.preview-card dd{margin:7px 0 0;font-size:11px;font-weight:700}.submit-agreement{display:block;margin:18px 0;font-size:11px}.form-error{padding:10px;border-radius:8px;background:#ffeaed;color:var(--color-danger);font-size:11px}.form-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:24px}.ai-helper,.tips{margin-bottom:14px;padding:22px;border-radius:var(--radius-md)}.ai-helper{background:linear-gradient(145deg,#2b2051,#6f4ad8);color:#fff}.ai-helper>svg{color:#d9c8ff}.ai-helper h3{margin:14px 0 7px}.ai-helper p{color:#d2cae6;font-size:11px;line-height:1.7}.ai-helper a{color:#fff;font-size:11px;font-weight:800}.tips{background:#fff;border:1px solid var(--color-line)}.tips p{color:var(--color-ink-soft);font-size:10px}.submit-result{max-width:720px;margin:70px auto;text-align:center}.submit-result>span{width:70px;height:70px;margin:auto;border-radius:50%;background:var(--color-mint-soft);color:var(--color-mint);display:grid;place-items:center}.submit-result h1{margin:20px 0 10px}.submit-result p{color:var(--color-ink-soft)}.submit-result>div{display:flex;justify-content:center;gap:10px;margin-top:24px}
+.field-error{margin-top:6px;color:var(--color-danger);font-size:10px}
 @media(max-width:850px){.create-layout{grid-template-columns:1fr}.create-layout aside{display:grid;grid-template-columns:1fr 1fr;gap:12px}.stepper button{width:auto;flex:1}.stepper button:after{display:none}.templates{grid-template-columns:1fr}.preview-card dl{grid-template-columns:1fr}}@media(max-width:600px){.create-head>div>span,.stepper b{display:none}.stepper button{justify-content:center}.panel{padding:22px}.create-layout aside{grid-template-columns:1fr}.map-picker{align-items:flex-start;flex-wrap:wrap}}
 </style>

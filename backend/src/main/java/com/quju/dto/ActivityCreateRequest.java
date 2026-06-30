@@ -21,7 +21,7 @@ public class ActivityCreateRequest {
     private BigDecimal longitude;
     private BigDecimal latitude;
     private BigDecimal price = BigDecimal.ZERO;
-    @Min(value = 2, message = "活动人数上限至少为2人") private int capacity;
+    @Min(value = 2, message = "活动人数上限必须为大于等于2的整数") private int capacity;
     private List<String> tags;
     private int minAge = 0;
     private String safetyNote;
