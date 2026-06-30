@@ -105,6 +105,7 @@ export interface ReviewTask {
   reason: string
   submittedAt: string
   status: ReviewStatus
+  targetId: string
 }
 
 export interface Message {

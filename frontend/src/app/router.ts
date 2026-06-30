@@ -24,6 +24,7 @@ const router = createRouter({
       path: '/admin', component: AdminShell, children: [
         { path: '', name: 'admin-dashboard', component: () => import('@/views/admin/DashboardView.vue') },
         { path: 'reviews', name: 'admin-reviews', component: () => import('@/views/admin/ReviewsView.vue') },
+        { path: 'activities/:id', name: 'admin-activity-detail', component: () => import('@/views/admin/ActivityDetailView.vue') },
         { path: 'users', name: 'admin-users', component: () => import('@/views/admin/UsersView.vue') },
         { path: 'content', name: 'admin-content', component: () => import('@/views/admin/ContentView.vue') },
       ],
