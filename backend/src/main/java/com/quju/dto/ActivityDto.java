@@ -30,6 +30,7 @@ public class ActivityDto {
     private String safetyNote;
     private int minAge;
     private List<String> joinFields;
+    private String updatedAt;
 
     public ActivityDto() { }
 
@@ -94,4 +95,6 @@ public class ActivityDto {
     public void setMinAge(int minAge) { this.minAge = minAge; }
     public List<String> getJoinFields() { return joinFields; }
     public void setJoinFields(List<String> joinFields) { this.joinFields = joinFields; }
+    public String getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(String updatedAt) { this.updatedAt = updatedAt; }
 }
