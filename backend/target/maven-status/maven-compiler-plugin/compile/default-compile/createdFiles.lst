@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 com/quju/dto/SocialDtos$FriendRequestInput.class
 com/quju/dto/SocialDtos$FriendMetaRequest.class
 com/quju/dto/ActivityOpsDtos$RegistrationRequest.class
@@ -32,3 +33,5 @@ com/quju/dto/CommonDtos$FileResponse.class
 com/quju/service/SocialService.class
 com/quju/controller/FileController.class
 com/quju/service/FileStorageService.class
+=======
+>>>>>>> d3542ccf74bc40618d11c87292b7d359ff59bfcc

@@ -1,2 +1,20 @@
+<<<<<<< HEAD
 /Users/a1234/Documents/Code/JoyGather/backend/src/test/java/com/quju/service/ActivityServiceTest.java
 /Users/a1234/Documents/Code/JoyGather/backend/src/test/java/com/quju/QujuApplicationTests.java
+=======
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/QujuApplicationTests.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/UsD03BanUnblockTest.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/UsB06ManualReviewTest.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/UsA03ProfileTest.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/UsB01aCreateActivityTest.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/UsD02UserQueryTest.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/UsB04DraftTest.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/ActivityServiceTest.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/UsB07aLatestFeedTest.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/TestBase.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/UsA02LoginStatusTest.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/UsD01AdminLoginTest.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/UsB10ActivityDetailTest.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/UsB11RegistrationTest.java
+/Users/fny/code/2606_JuQu2/JoyGather/backend/src/test/java/com/quju/service/UsA01RegisterActivateTest.java
+>>>>>>> d3542ccf74bc40618d11c87292b7d359ff59bfcc
