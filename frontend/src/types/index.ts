@@ -68,6 +68,7 @@ export interface Team {
   activeNow: number
   status?: '正常' | '已停用'
   stopReason?: string
+  ownerId?: string
 }
 
 export interface Registration {

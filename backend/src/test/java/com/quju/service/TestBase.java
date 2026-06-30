@@ -160,6 +160,65 @@ public abstract class TestBase {
                 + "id varchar(64) primary key, actor_id varchar(64), action varchar(80),"
                 + "target_type varchar(80), target_id varchar(64), reason varchar(1000),"
                 + "created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table teams ("
+                + "id varchar(64) primary key, name varchar(120), description varchar(1000),"
+                + "cover varchar(500), tags varchar(1000), members_count int, capacity int,"
+                + "join_mode varchar(32), active_now int, status varchar(32) default '正常',"
+                + "stop_reason varchar(1000), owner_id varchar(64),"
+                + "created_at timestamp default current_timestamp, updated_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_members ("
+                + "team_id varchar(64), user_id varchar(64), role varchar(32),"
+                + "status varchar(32) default '正常', joined_at timestamp default current_timestamp,"
+                + "primary key(team_id, user_id))");
+
+        jdbc.execute("create table team_join_requests ("
+                + "id varchar(64) primary key, team_id varchar(64), user_id varchar(64),"
+                + "status varchar(32) default '待审核', reason varchar(1000),"
+                + "created_at timestamp default current_timestamp, handled_at timestamp, handler_id varchar(64))");
+
+        jdbc.execute("create table conversations ("
+                + "id varchar(64) primary key, name varchar(120), avatar varchar(500),"
+                + "type varchar(32), team_id varchar(64), friend_user_id varchar(64),"
+                + "unread int default 0, last_message varchar(1000), last_time varchar(40),"
+                + "online boolean default false)");
+
+        jdbc.execute("create table conversation_participants ("
+                + "conversation_id varchar(64), user_id varchar(64), last_read_at timestamp,"
+                + "muted boolean default false, pinned boolean default false,"
+                + "primary key(conversation_id, user_id))");
+
+        jdbc.execute("create table messages ("
+                + "id varchar(64) primary key, conversation_id varchar(64), sender_id varchar(64),"
+                + "content varchar(1000), message_type varchar(32), media_url varchar(500),"
+                + "location_lat double, location_lng double, sent_at timestamp default current_timestamp,"
+                + "mine boolean default false, read_flag boolean default false, recalled boolean default false,"
+                + "recalled_at timestamp, forwarded_from_id varchar(64))");
+
+        jdbc.execute("create table team_announcements ("
+                + "id varchar(64) primary key, team_id varchar(64), author_id varchar(64),"
+                + "content varchar(1000), mention_all boolean default false, created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_polls ("
+                + "id varchar(64) primary key, team_id varchar(64), author_id varchar(64),"
+                + "title varchar(180), status varchar(32) default '进行中', created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_poll_options ("
+                + "id varchar(64) primary key, poll_id varchar(64), text varchar(180), rank_order int)");
+
+        jdbc.execute("create table team_files ("
+                + "id varchar(64) primary key, team_id varchar(64), file_id varchar(64),"
+                + "uploader_id varchar(64), created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_albums ("
+                + "id varchar(64) primary key, team_id varchar(64), file_id varchar(64),"
+                + "uploader_id varchar(64), url varchar(700), caption varchar(1000),"
+                + "created_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table team_points ("
+                + "team_id varchar(64), user_id varchar(64), points int,"
+                + "updated_at timestamp default current_timestamp, primary key(team_id, user_id))");
     }
 
     // -------------------------------------------------------

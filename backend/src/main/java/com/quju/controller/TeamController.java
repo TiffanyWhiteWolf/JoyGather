@@ -120,9 +120,10 @@ public class TeamController {
 
     @PostMapping("/{id}/dissolve")
     public ApiResponse<Void> dissolve(@PathVariable String id,
+                                      @RequestBody(required = false) TeamOpsDtos.DissolveRequest request,
                                       @RequestHeader(value = "Authorization", required = false) String authorization) {
         String userId = userService.requireToken(authorization).getId();
-        teamService.dissolve(id, userId);
+        teamService.dissolve(id, userId, request);
         return ApiResponse.success(null);
     }
 }

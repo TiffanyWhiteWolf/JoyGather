@@ -65,6 +65,7 @@ public class MessageService {
     @Transactional
     public MessageDtos.MessageDto send(String conversationId, String senderId, MessageDtos.SendMessageRequest request) {
         requireParticipant(conversationId, senderId);
+        requireOpenConversation(conversationId);
         if (request == null) throw new IllegalStateException("消息内容不能为空");
         String type = DbSupport.safe(request.getType(), "TEXT");
         String content = DbSupport.safe(request.getContent(), "");
@@ -156,6 +157,11 @@ public class MessageService {
     private void requireParticipant(String conversationId, String userId) {
         Integer count = jdbc.queryForObject("select count(*) from conversation_participants where conversation_id = ? and user_id = ?", Integer.class, conversationId, userId);
         if (count == null || count == 0) throw new IllegalStateException("非好友且非同队关系不可发送消息");
+    }
+
+    private void requireOpenConversation(String conversationId) {
+        Integer count = jdbc.queryForObject("select count(*) from conversations where id = ? and team_id is not null and online = false", Integer.class, conversationId);
+        if (count != null && count > 0) throw new IllegalStateException("小队已解散，群聊停止使用");
     }
 
     private void validateLocation(Double latitude, Double longitude) {

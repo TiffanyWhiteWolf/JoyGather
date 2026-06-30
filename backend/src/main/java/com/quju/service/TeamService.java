@@ -81,11 +81,18 @@ public class TeamService {
     }
 
     @Transactional
-    public void dissolve(String teamId, String actorId) {
+    public void dissolve(String teamId, String actorId, TeamOpsDtos.DissolveRequest request) {
+        if (request == null || !request.isConfirmed() || !"解散小队".equals(DbSupport.safe(request.getConfirmationText(), "").trim())) {
+            throw new IllegalStateException("请二次确认解散小队");
+        }
+        TeamDto team = get(teamId);
+        if (!"正常".equals(team.getStatus())) throw new IllegalStateException("小队已停用");
         if (!"队长".equals(roleOf(teamId, actorId))) throw new IllegalStateException("仅队长可解散小队");
-        jdbc.update("update teams set status = '已停用', stop_reason = '队长解散' where id = ?", teamId);
+        jdbc.update("update teams set status = '已停用', stop_reason = '队长解散', members_count = 0, active_now = 0 where id = ?", teamId);
         jdbc.update("delete from team_members where team_id = ?", teamId);
+        jdbc.update("delete from conversation_participants where conversation_id in (select id from conversations where team_id = ?)", teamId);
         jdbc.update("update conversations set online = 0, last_message = '小队已解散' where team_id = ?", teamId);
+        jdbc.update("update activities set status = '已下架', offline_reason = '所属小队已解散' where team_id = ? and status not in ('草稿','已结束','已下架')", teamId);
         log(actorId, "DISSOLVE_TEAM", "TEAM", teamId, "队长解散");
     }
 
@@ -174,6 +181,7 @@ public class TeamService {
                 team.setActiveNow(rs.getInt("active_now"));
                 team.setStatus(rs.getString("status"));
                 team.setStopReason(rs.getString("stop_reason"));
+                team.setOwnerId(rs.getString("owner_id"));
                 return team;
             }
         };
