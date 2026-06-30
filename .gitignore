@@ -12,3 +12,6 @@ backend/src/main/resources/application-local.yml
 # Build outputs
 backend/target/
 frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
