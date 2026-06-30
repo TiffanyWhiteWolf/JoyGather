@@ -25,6 +25,9 @@ const templates = [
   { name: '城市探索', category: '城市探索' as ActivityCategory, title: '周末城市漫步', tags: 'Citywalk、摄影、新手友好', summary: '不赶路地认识城市，也认识同行的人。', safety: '请穿舒适的鞋，遵守交通规则并保持队伍联系。' },
   { name: '户外徒步', category: '户外运动' as ActivityCategory, title: '新手友好轻徒步', tags: '徒步、自然、零基础', summary: '低强度路线，途中安排休息与补给。', safety: '根据天气准备防晒或雨具，领队携带急救包。' },
   { name: '桌游聚会', category: '桌游聚会' as ActivityCategory, title: '不尴尬桌游破冰夜', tags: '桌游、室内、破冰', summary: '主持人全程带玩，不需要任何经验。', safety: '请保管好个人物品，未成年人需监护人确认。' },
+  { name: '运动健身', category: '运动健身' as ActivityCategory, title: '周末晨间飞盘练习局', tags: '飞盘、运动、新手友好', summary: '从基础传盘到简单对抗，适合想轻松动起来的参与者。', safety: '建议携带运动水和替换衣物，活动前充分热身。' },
+  { name: '学习交流', category: '学习交流' as ActivityCategory, title: '主题分享 + 轻松社交', tags: '分享、讨论、知识交流', summary: '每个人都可以用 10 分钟分享一个最近有启发的主题。', safety: '请尊重他人表达，理性讨论，不录音不外传。' },
+  { name: '公益活动', category: '公益活动' as ActivityCategory, title: '社区志愿清洁日', tags: '志愿、社区、环保', summary: '一起清理公共区域和绿步道，也认识同样在意城市的人。', safety: '请穿轻便服装和防滑鞋，现场统一发放手套和夹具。' },
 ]
 
 const form = reactive<ActivityDraft>({
@@ -280,7 +283,7 @@ onMounted(async () => {
     const source = await apiGet<Activity>(`/activities/${cloneId}`)
     if (source) {
       Object.assign(form, {
-        id: `draft-${Date.now()}`, title: `${source.title}（复刻）`, category: source.category,
+        id: `draft-${Date.now()}`, title: `${source.title}（复制）`, category: source.category,
         tags: source.tags.join('、'), summary: source.description,
         date: source.date,
         startTime: source.startAt?.slice(11, 16) || '',
@@ -295,7 +298,7 @@ onMounted(async () => {
       latitude.value = Number(source.latitude)
     }
   }
-  if (route.query.ai === '1') Object.assign(form, { title: '月光底片｜老街夜游摄影漫步', category: '城市探索', tags: '城市探索、摄影、新手友好', summary: '用镜头收集老街的灯光与路人，不比器材，只交换观察城市的方式。', safetyNote: '请确认夜间照明、紧急联系人和清晰的集合地点。' })
+  if (route.query.ai === '1') Object.assign(form, { title: '月光底片·老街夜游摄影漫步', category: '城市探索', tags: '城市探索、摄影、新手友好', summary: '用镜头收集老街的灯光与路人，不比器材，只交换观察城市的方式。', safetyNote: '请确认夜间照明、紧急联系人和清晰的集合地点。' })
 })
 </script>
 
@@ -338,9 +341,9 @@ onMounted(async () => {
         </template>
 
         <p v-if="submitError" class="form-error">{{ submitError }}</p>
-        <div class="form-actions"><button v-if="step>1" class="btn btn-outline" :disabled="saving || submitting" @click="step--">上一步</button><button class="btn btn-primary" :disabled="saving || submitting" @click="next">{{ submitting ? '提交中…' : saving ? '保存中…' : step===4 ? '提交审核' : '保存并继续' }}</button></div>
+        <div class="form-actions"><button v-if="step>1" class="btn btn-outline" :disabled="saving || submitting" @click="step--">上一步</button><button class="btn btn-primary" :disabled="saving || submitting" @click="next">{{ submitting ? '提交中' : saving ? '保存中' : step===4 ? '提交审核' : '保存并继续' }}</button></div>
       </section>
-      <aside><div class="ai-helper"><Sparkles /><h3>没想好怎么写？</h3><p>AI 可以生成可继续修改的标题、亮点与活动流程。</p><RouterLink to="/ai-planner">让 AI 帮我策划 →</RouterLink></div><div class="tips"><b>发布前小提示</b><p>✓ 地点可被参与者清楚找到</p><p>✓ 截止时间早于活动开始</p><p>✓ 户外活动写明安全须知</p><p>✓ 超过 50 人将人工审核</p></div></aside>
+      <aside><div class="ai-helper"><Sparkles /><h3>没想好怎么写？</h3><p>AI 可以生成可继续修改的标题、亮点与活动流程。</p><RouterLink to="/ai-planner">让 AI 帮我策划 →</RouterLink></div><div class="tips"><b>发布前小提示</b><p>地点要让参与者清楚找到</p><p>截止时间早于活动开始</p><p>户外活动写明安全须知</p><p>超过 50 人将人工审核</p></div></aside>
     </div>
   </div>
 </template>

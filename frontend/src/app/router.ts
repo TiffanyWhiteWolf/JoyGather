@@ -49,7 +49,7 @@ router.beforeEach((to) => {
   }
 
   // Protected user paths require login
-  const protectedPaths = ['/create', '/drafts', '/messages', '/profile', '/check-in']
+  const protectedPaths = ['/create', '/drafts', '/messages', '/profile', '/check-in', '/teams/']
   if (protectedPaths.some(path => to.path.startsWith(path)) && !token) {
     return { path: '/auth', query: { redirect: to.fullPath } }
   }

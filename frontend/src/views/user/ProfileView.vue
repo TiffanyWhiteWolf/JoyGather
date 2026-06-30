@@ -16,6 +16,7 @@ interface FileResponse {
   size: number
   provider: string
 }
+
 interface MerchantApplication {
   id: string
   merchantName: string
@@ -26,11 +27,13 @@ interface MerchantApplication {
   submittedAt?: string
   reviewedAt?: string
 }
+
 interface CheckinCodeResponse {
   code: string
   url: string
   expiresAt: string
 }
+
 interface RegistrationManagementRow {
   id: string
   userId: string
@@ -42,12 +45,15 @@ interface RegistrationManagementRow {
   checkedInAt?: string
 }
 
+const profileTabs = ['我的活动', '商家中心', '动态', '收藏', '活动总结'] as const
+type ProfileTab = typeof profileTabs[number]
+
 const router = useRouter()
 const app = useAppStore()
 const currentUser = ref<User | null>(null)
 const activities = ref<Activity[]>([])
 const editing = ref(false)
-const activeTab = ref<'我的活动' | '商家中心' | '动态' | '收藏' | '活动总结'>('我的活动')
+const activeTab = ref<ProfileTab>('我的活动')
 const saving = ref(false)
 const uploadingAvatar = ref(false)
 const error = ref('')
@@ -72,16 +78,17 @@ const cancelError = ref('')
 const cancelForm = reactive({ password: '', confirmText: '', reason: '' })
 const suggestedInterests = ['徒步', '骑行', '桌游', '摄影', '城市探索', '运动健身', '学习交流', '公益活动', '露营', '音乐', '读书', '咖啡']
 const merchantFieldPresets = ['户外运动', '城市探索', '桌游聚会', '亲子活动', '学习交流', '公益活动', '运动健身', '商业沙龙']
+const profile = reactive({ nickname: '', avatar: '', gender: '', birthday: '', city: '杭州', bio: '', interests: '' })
 const showCustomInterest = ref(false)
 const customInterestInput = ref('')
-const profile = reactive({ nickname: '', avatar: '', gender: '', birthday: '', city: '杭州', bio: '', interests: '' })
+
 const birthdayDisplay = computed(() => {
   if (!profile.birthday) return ''
   const [year, month, day] = profile.birthday.split('-')
   return `${year}年${month}月${day}日`
 })
-const customInterestTags = computed(() => parseInterestTags().filter(tag => !suggestedInterests.includes(tag)))
 const latestMerchantApplication = computed(() => merchantApplications.value[0] ?? null)
+const customInterestTags = computed(() => parseInterestTags().filter(tag => !suggestedInterests.includes(tag)))
 const checkedInCount = computed(() => checkinRows.value.filter(item => item.status === '已签到').length)
 const registeredCount = computed(() => checkinRows.value.filter(item => item.status === '已报名' || item.status === '已签到').length)
 const waitingCount = computed(() => checkinRows.value.filter(item => item.status === '候补中').length)
@@ -90,6 +97,7 @@ const merchantStatusText = computed(() => {
   if (latestMerchantApplication.value) return `认证${latestMerchantApplication.value.status}`
   return '未提交认证'
 })
+
 onMounted(async () => {
   try {
     const [user, rows, applications] = await Promise.all([
@@ -100,7 +108,15 @@ onMounted(async () => {
     currentUser.value = user
     merchantApplications.value = applications
     const latestApplication = applications[0]
-    Object.assign(profile, { nickname: user.nickname, avatar: user.avatar, gender: user.gender || '', birthday: user.birthday || '', city: user.city, bio: user.bio, interests: user.interests.join('、') })
+    Object.assign(profile, {
+      nickname: user.nickname,
+      avatar: user.avatar,
+      gender: user.gender || '',
+      birthday: user.birthday || '',
+      city: user.city,
+      bio: user.bio,
+      interests: user.interests.join('、'),
+    })
     Object.assign(merchantForm, {
       merchantName: user.merchantName || latestApplication?.merchantName || '',
       merchantNickname: user.merchantNickname || user.merchantName || '',
@@ -113,6 +129,46 @@ onMounted(async () => {
     router.push('/auth')
   }
 })
+
+function parseInterestTags() {
+  return Array.from(new Set(profile.interests.split(/[、,，]/).map(item => item.trim()).filter(Boolean)))
+}
+
+function hasInterest(tag: string) {
+  return parseInterestTags().includes(tag)
+}
+
+function toggleInterest(tag: string) {
+  const tags = parseInterestTags()
+  const next = tags.includes(tag) ? tags.filter(item => item !== tag) : [...tags, tag]
+  profile.interests = next.join('、')
+}
+
+function addCustomInterest() {
+  const tag = customInterestInput.value.trim()
+  if (!tag) return
+  if (!hasInterest(tag)) profile.interests = [...parseInterestTags(), tag].join('、')
+  customInterestInput.value = ''
+}
+
+function removeCustomInterest(tag: string) {
+  profile.interests = parseInterestTags().filter(item => item !== tag).join('、')
+}
+
+function parseMerchantFields() {
+  return Array.from(new Set(merchantForm.merchantFields.split(/[、,，]/).map(item => item.trim()).filter(Boolean)))
+}
+
+function hasMerchantField(field: string) {
+  return parseMerchantFields().includes(field)
+}
+
+function toggleMerchantField(field: string) {
+  const fields = parseMerchantFields()
+  const next = fields.includes(field) ? fields.filter(item => item !== field) : [...fields, field]
+  merchantForm.merchantFields = next.join('、')
+}
+
 async function saveProfile() {
   error.value = ''
   saving.value = true
@@ -126,40 +182,11 @@ async function saveProfile() {
     saving.value = false
   }
 }
-function parseInterestTags() {
-  return Array.from(new Set(profile.interests.split(/[、,，]/).map(item => item.trim()).filter(Boolean)))
-}
-function hasInterest(tag: string) {
-  return parseInterestTags().includes(tag)
-}
-function toggleInterest(tag: string) {
-  const tags = parseInterestTags()
-  const next = tags.includes(tag) ? tags.filter(item => item !== tag) : [...tags, tag]
-  profile.interests = next.join('、')
-}
-function addCustomInterest() {
-  const tag = customInterestInput.value.trim()
-  if (!tag) return
-  if (!hasInterest(tag)) profile.interests = [...parseInterestTags(), tag].join('、')
-  customInterestInput.value = ''
-}
-function removeCustomInterest(tag: string) {
-  profile.interests = parseInterestTags().filter(item => item !== tag).join('、')
-}
-function parseMerchantFields() {
-  return Array.from(new Set(merchantForm.merchantFields.split(/[、,，]/).map(item => item.trim()).filter(Boolean)))
-}
-function hasMerchantField(field: string) {
-  return parseMerchantFields().includes(field)
-}
-function toggleMerchantField(field: string) {
-  const fields = parseMerchantFields()
-  const next = fields.includes(field) ? fields.filter(item => item !== field) : [...fields, field]
-  merchantForm.merchantFields = next.join('、')
-}
+
 async function refreshMerchantApplications() {
   merchantApplications.value = await apiGet<MerchantApplication[]>('/users/merchant-applications/me')
 }
+
 async function saveMerchantProfile() {
   merchantError.value = ''
   if (!merchantForm.merchantName.trim()) {
@@ -183,6 +210,7 @@ async function saveMerchantProfile() {
     merchantSaving.value = false
   }
 }
+
 async function submitMerchantApplication() {
   merchantError.value = ''
   if (!merchantForm.merchantName.trim()) {
@@ -210,6 +238,7 @@ async function submitMerchantApplication() {
     merchantSubmitting.value = false
   }
 }
+
 async function openCheckinManagement(activity: Activity) {
   checkinError.value = ''
   checkinActivity.value = activity
@@ -219,6 +248,7 @@ async function openCheckinManagement(activity: Activity) {
   checkinOpen.value = true
   await loadCheckinRows(activity.id)
 }
+
 async function loadCheckinRows(activityId: string) {
   registrationLoading.value = true
   try {
@@ -230,6 +260,7 @@ async function loadCheckinRows(activityId: string) {
     registrationLoading.value = false
   }
 }
+
 async function generateCheckinCode(activity: Activity) {
   checkinError.value = ''
   checkinActivity.value = activity
@@ -250,14 +281,17 @@ async function generateCheckinCode(activity: Activity) {
     checkinLoading.value = false
   }
 }
+
 async function copyCheckinUrl() {
   if (!checkinUrl.value) return
   await navigator.clipboard.writeText(checkinUrl.value)
   app.showToast('签到链接已复制')
 }
+
 function formatDateTime(value?: string) {
   return value ? value.replace('T', ' ').slice(0, 16) : '-'
 }
+
 async function uploadAvatar(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -282,10 +316,12 @@ async function uploadAvatar(event: Event) {
     input.value = ''
   }
 }
+
 function changeCover() {
   error.value = ''
   window.alert('封面图上传暂未开放，请先在头像 URL 中更新个人展示图片。')
 }
+
 function openCancelAccount() {
   cancelError.value = ''
   cancelForm.password = ''
@@ -293,6 +329,7 @@ function openCancelAccount() {
   cancelForm.reason = ''
   cancelOpen.value = true
 }
+
 async function cancelAccount() {
   cancelError.value = ''
   if (!cancelForm.password) {
@@ -323,13 +360,16 @@ async function cancelAccount() {
   }
 }
 </script>
+
 <template>
   <div v-if="currentUser" class="container profile-page">
     <input ref="avatarInput" class="hidden-file" type="file" accept="image/*" @change="uploadAvatar" />
+
     <section class="profile-cover">
       <div class="profile-pattern"></div>
       <button @click="changeCover"><Camera :size="16" />更换封面</button>
     </section>
+
     <section class="profile-main">
       <img :src="currentUser.avatar" />
       <div class="profile-copy">
@@ -362,21 +402,33 @@ async function cancelAccount() {
       <div class="form-grid">
         <label>昵称<input v-model.trim="profile.nickname" class="input" /></label>
         <label>性别<input v-model.trim="profile.gender" class="input" /></label>
-        <label>生日<div class="date-picker-wrapper"><input v-model="profile.birthday" type="date" class="input date-native" /><span class="date-overlay" aria-hidden="true">{{ birthdayDisplay || '请选择生日' }}</span></div></label>
+        <label>
+          生日
+          <div class="date-picker-wrapper">
+            <input v-model="profile.birthday" type="date" class="input date-native" />
+            <span class="date-overlay" aria-hidden="true">{{ birthdayDisplay || '请选择生日' }}</span>
+          </div>
+        </label>
         <label>城市<input v-model.trim="profile.city" class="input" /></label>
       </div>
       <label class="interest-editor">
         兴趣标签
         <div class="interest-presets">
-          <button v-for="tag in suggestedInterests" :key="tag" type="button" :class="{active:hasInterest(tag)}" @click="toggleInterest(tag)"># {{ tag }}</button>
-          <button type="button" class="interest-other-btn" :class="{active:showCustomInterest}" @click="showCustomInterest=!showCustomInterest"># 其他</button>
+          <button v-for="tag in suggestedInterests" :key="tag" type="button" :class="{ active: hasInterest(tag) }" @click="toggleInterest(tag)"># {{ tag }}</button>
+          <button type="button" class="interest-other-btn" :class="{ active: showCustomInterest }" @click="showCustomInterest=!showCustomInterest"># 其他</button>
         </div>
-        <div v-if="customInterestTags.length" class="custom-tags"><span v-for="tag in customInterestTags" :key="tag" class="custom-tag"># {{ tag }}<button type="button" class="custom-tag-remove" @click="removeCustomInterest(tag)">&times;</button></span></div>
-        <div v-if="showCustomInterest" class="custom-interest-row"><input v-model="customInterestInput" class="input" placeholder="输入自定义兴趣，回车添加" @keyup.enter="addCustomInterest" @keyup.esc="showCustomInterest=false" /><button type="button" class="btn btn-primary" @click="addCustomInterest">添加</button></div>
+        <div v-if="customInterestTags.length" class="custom-tags">
+          <span v-for="tag in customInterestTags" :key="tag" class="custom-tag"># {{ tag }}<button type="button" class="custom-tag-remove" @click="removeCustomInterest(tag)">&times;</button></span>
+        </div>
+        <div v-if="showCustomInterest" class="custom-interest-row">
+          <input v-model="customInterestInput" class="input" placeholder="输入自定义兴趣，回车添加" @keyup.enter="addCustomInterest" @keyup.esc="showCustomInterest=false" />
+          <button type="button" class="btn btn-primary" @click="addCustomInterest">添加</button>
+        </div>
+        <input v-model.trim="profile.interests" class="input" placeholder="可选择上方标签，也可用顿号手动输入" />
       </label>
       <label>个性签名<textarea v-model.trim="profile.bio" class="textarea"></textarea></label>
       <p v-if="error" class="form-error">{{ error }}</p>
-      <div>
+      <div class="edit-actions">
         <button class="btn btn-outline" @click="editing=false">取消</button>
         <button class="btn btn-primary" :disabled="saving" @click="saveProfile">{{ saving ? '保存中' : '保存资料' }}</button>
       </div>
@@ -385,8 +437,9 @@ async function cancelAccount() {
     <div class="profile-grid">
       <main>
         <div class="profile-tabs">
-          <button v-for="tab in ['我的活动','商家中心','动态','收藏','活动总结'] as const" :key="tab" :class="{active:activeTab===tab}" @click="activeTab=tab">{{ tab }}</button>
+          <button v-for="tab in profileTabs" :key="tab" :class="{ active: activeTab === tab }" @click="activeTab=tab">{{ tab }}</button>
         </div>
+
         <template v-if="activeTab==='我的活动'">
           <div v-if="activities.length" class="activity-grid managed-activities">
             <div v-for="activity in activities" :key="activity.id" class="managed-activity">
@@ -399,6 +452,7 @@ async function cancelAccount() {
           </div>
           <div v-else class="empty-state">你还没有发布活动。</div>
         </template>
+
         <template v-else-if="activeTab==='商家中心'">
           <section class="merchant-panel">
             <div class="merchant-head">
@@ -414,9 +468,10 @@ async function cancelAccount() {
                 <h3>商家资料</h3>
                 <label>商家名称 *<input v-model.trim="merchantForm.merchantName" class="input" placeholder="营业执照或经营主体名称" /></label>
                 <label>商家昵称<input v-model.trim="merchantForm.merchantNickname" class="input" placeholder="对用户展示的品牌名" /></label>
-                <label>关注领域
+                <label>
+                  关注领域
                   <div class="interest-presets merchant-presets">
-                    <button v-for="field in merchantFieldPresets" :key="field" type="button" :class="{active:hasMerchantField(field)}" @click="toggleMerchantField(field)"># {{ field }}</button>
+                    <button v-for="field in merchantFieldPresets" :key="field" type="button" :class="{ active: hasMerchantField(field) }" @click="toggleMerchantField(field)"># {{ field }}</button>
                   </div>
                   <input v-model.trim="merchantForm.merchantFields" class="input" placeholder="可选择标签，也可用顿号手动输入" />
                 </label>
@@ -438,8 +493,10 @@ async function cancelAccount() {
             <p v-if="merchantError" class="form-error">{{ merchantError }}</p>
           </section>
         </template>
+
         <div v-else class="empty-state">{{ activeTab }}功能已接入个人页入口，当前账号暂无数据。</div>
       </main>
+
       <aside>
         <div class="side-card">
           <h3>我的快捷入口</h3>
@@ -526,9 +583,155 @@ async function cancelAccount() {
     </div>
   </div>
 </template>
+
 <style scoped>
-.profile-page{padding:30px 0 70px}.profile-cover{position:relative;height:220px;overflow:hidden;border-radius:var(--radius-xl);background:linear-gradient(120deg,#ffad87,#ff6b45 40%,#7256c7)}.profile-pattern{position:absolute;inset:0;background:radial-gradient(circle at 18% 120%,transparent 0 110px,rgba(255,255,255,.1) 111px 150px,transparent 151px),radial-gradient(circle at 85% -20%,transparent 0 100px,rgba(255,255,255,.1) 101px 155px,transparent 156px)}.profile-cover button{position:absolute;right:18px;top:18px;padding:8px 11px;border:0;border-radius:var(--radius-pill);background:rgba(255,255,255,.85);display:flex;gap:5px;font-size:10px}.profile-main{position:relative;margin:-55px 26px 0;min-height:150px;padding:22px 25px 22px 155px;border-radius:var(--radius-lg);background:#fff;box-shadow:var(--shadow-card);display:flex;align-items:center;gap:20px}.profile-main>img{position:absolute;left:25px;top:-35px;width:112px;height:112px;border:5px solid #fff;border-radius:30px;object-fit:cover}.profile-copy{flex:1}.profile-copy>div:first-child{display:flex;align-items:center;gap:12px}.profile-copy h1{display:flex;align-items:center;gap:6px;margin:0;font-size:25px}.profile-copy h1 svg{color:var(--mint)}.location{display:flex;align-items:center;color:var(--color-ink-soft);font-size:10px}.profile-copy p{margin:9px 0;color:var(--color-ink-soft);font-size:12px}.profile-stats{display:flex;gap:24px}.profile-stats div{display:flex;align-items:center;flex-direction:column}.profile-stats b{font-size:18px}.profile-stats span{color:var(--color-ink-soft);font-size:9px}.profile-main>.btn{font-size:11px}.profile-grid{display:grid;grid-template-columns:1fr 280px;gap:20px;margin-top:30px}.profile-tabs{display:flex;gap:22px;margin-bottom:18px;border-bottom:1px solid var(--color-line)}.profile-tabs button{padding:12px 2px;border:0;border-bottom:2px solid transparent;background:none;color:var(--color-ink-soft);font-weight:700}.profile-tabs button.active{border-color:var(--color-primary);color:var(--color-ink)}.profile-grid .activity-grid{grid-template-columns:1fr 1fr}.side-card{margin-bottom:15px;padding:20px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}.side-card h3{font-size:14px}.side-card>a{padding:11px 0;border-bottom:1px solid var(--color-line);display:flex;align-items:center;gap:9px;font-size:11px}.side-card>a svg:first-child{width:16px;color:var(--color-primary)}.side-card>a svg:last-child{width:14px;margin-left:auto;color:var(--color-ink-soft)}.credit{background:var(--color-ink);color:#fff}.credit>div{display:flex;align-items:center;gap:7px;color:var(--color-sun);font-size:12px}.credit strong{display:block;margin:15px 0 7px;font-size:35px}.credit strong small{font-size:12px;color:#8f98a8}.credit p{margin:0;color:#aab1bf;font-size:9px;line-height:1.7}
-.hidden-file{display:none}.edit-panel{margin:20px 26px 0;padding:22px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}.avatar-editor{display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:12px;border:1px solid var(--color-line);border-radius:var(--radius-md);background:var(--color-bg)}.avatar-editor>img{width:76px;height:76px;border-radius:22px;object-fit:cover;background:#fff}.avatar-editor>div{min-width:0;flex:1;display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:10px}.avatar-editor b{font-size:13px}.avatar-editor .btn{height:36px;font-size:11px}.edit-panel .form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.edit-panel label{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:800}.edit-panel>label{margin-top:12px}.interest-editor{margin-top:12px}.interest-presets{display:flex;flex-wrap:wrap;gap:8px}.interest-presets button{padding:7px 10px;border:1px solid var(--color-line);border-radius:var(--radius-pill);background:#fff;color:var(--color-ink-soft);font-size:11px;font-weight:800}.interest-presets button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary)}.edit-panel>div:last-child{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.form-error{padding:9px;border-radius:8px;background:#ffeaed;color:var(--color-danger);font-size:10px}.empty-state{padding:36px;background:#fff;border:1px dashed var(--color-line);border-radius:var(--radius-md);color:var(--color-ink-soft);text-align:center}.empty-state.small{padding:20px;font-size:11px}.managed-activity{display:grid;gap:8px}.activity-tools{padding:10px;border:1px solid var(--color-line);border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:8px}.activity-tools span{padding:5px 7px;border-radius:6px;background:var(--color-mint-soft);color:var(--color-mint);font-size:10px;font-weight:800}.activity-tools button,.side-action{border:0;background:none;color:var(--color-primary);display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800}.side-action{width:100%;padding:11px 0;border-bottom:1px solid var(--color-line);color:var(--color-ink);text-align:left}.side-action svg:first-child{width:16px;color:var(--color-primary)}.side-action svg:last-child{width:14px;margin-left:auto;color:var(--color-ink-soft)}.merchant-panel{padding:22px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}.merchant-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}.merchant-head h2{margin:4px 0 6px}.merchant-head p{margin:0;color:var(--color-ink-soft);font-size:12px}.merchant-head i{padding:7px 10px;border-radius:8px;background:var(--color-primary-soft);color:var(--color-primary);font-size:11px;font-style:normal;font-weight:800;white-space:nowrap}.merchant-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.merchant-form-card{padding:16px;border:1px solid var(--color-line);border-radius:12px;background:var(--color-bg)}.merchant-form-card h3{margin:0 0 14px}.merchant-form-card label{display:flex;flex-direction:column;gap:6px;margin-top:11px;font-size:11px;font-weight:800}.merchant-form-card .btn{width:100%;margin-top:14px;justify-content:center}.merchant-status{min-height:36px;margin:12px 0 0!important;color:var(--color-ink-soft);font-size:11px!important}.merchant-presets{margin-bottom:2px}.danger-card{border-color:#ffd2d8;background:#fffafa}.danger-card>div{display:flex;align-items:center;gap:8px}.danger-card h3{margin:0}.danger-card svg{color:var(--color-danger)}.danger-card p{margin:10px 0 14px;color:var(--color-ink-soft);font-size:10px;line-height:1.7}.delete-account{width:100%;padding:10px;border:1px solid #ffd2d8;border-radius:8px;background:#fff;color:var(--color-danger);display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;font-weight:800}.account-modal{position:fixed;z-index:100;inset:0;padding:18px;background:rgba(13,21,34,.55);display:grid;place-items:center}.account-modal>div{position:relative;width:min(100%,460px);padding:30px;background:#fff;border-radius:16px;box-shadow:var(--shadow-float)}.modal-close{position:absolute;right:16px;top:16px;border:0;background:none;color:var(--color-ink-soft)}.modal-close svg{width:18px}.modal-icon{width:52px;height:52px;border-radius:50%;background:#ffeaed;color:var(--color-danger);display:grid;place-items:center}.modal-icon.checkin{background:var(--color-primary-soft);color:var(--color-primary)}.modal-icon svg{width:24px}.account-modal h2{margin:14px 0 8px}.account-modal p{color:var(--color-ink-soft);font-size:12px;line-height:1.7}.account-modal label{display:flex;flex-direction:column;gap:6px;margin-top:12px;font-size:11px;font-weight:800}.account-modal .textarea{min-height:76px}.account-modal footer{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.account-modal .btn{padding:10px 14px;font-size:11px}.account-modal .btn:disabled{opacity:.55;cursor:not-allowed}.checkin-modal{width:min(100%,720px)!important;max-height:90vh;overflow:auto;text-align:left}.checkin-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}.checkin-summary div{padding:12px;border:1px solid var(--color-line);border-radius:10px;background:var(--color-bg)}.checkin-summary b{display:block;font-size:22px}.checkin-summary span{font-size:10px;color:var(--color-ink-soft);font-weight:800}.checkin-actions{display:flex;gap:8px;margin-bottom:12px}.checkin-actions .btn{justify-content:center}.qr-loading{padding:32px;border:1px dashed var(--color-line);border-radius:12px;color:var(--color-ink-soft);text-align:center}.qr-panel{padding:14px;border:1px solid var(--color-line);border-radius:12px;background:#fff}.qr-image{display:block;width:220px;height:220px;margin:4px auto 16px;border:1px solid var(--color-line);border-radius:12px}.checkin-lines{display:grid;gap:8px;margin:12px 0}.checkin-lines span{min-width:0;padding:9px;border-radius:8px;background:var(--color-bg);display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:10px;word-break:break-all}.checkin-lines b{color:var(--color-ink-soft);white-space:nowrap}.registration-panel{margin-top:16px}.registration-panel h3{margin:0 0 10px;font-size:14px}.registration-list{display:grid;gap:8px}.registration-row{display:grid;grid-template-columns:40px 1fr auto;align-items:center;gap:10px;padding:10px;border:1px solid var(--color-line);border-radius:10px;background:#fff}.registration-row img{width:40px;height:40px;border-radius:50%;object-fit:cover;background:var(--color-bg)}.registration-row div{min-width:0}.registration-row b{display:block;font-size:12px}.registration-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-ink-soft);font-size:10px}.status-tag{padding:6px 8px;border-radius:8px;background:var(--color-primary-soft);color:var(--color-primary);font-size:10px;font-style:normal;font-weight:800;white-space:nowrap}.status-tag.done{background:var(--color-mint-soft);color:var(--color-mint)}.status-tag.waiting{background:#fff5d8;color:#9b6b00}.status-tag.cancelled{background:#f1f2f5;color:var(--color-ink-soft)}
-.date-picker-wrapper{position:relative}.date-picker-wrapper .date-native{color:transparent;-webkit-text-fill-color:transparent}.date-picker-wrapper .date-overlay{position:absolute;inset:0;display:flex;align-items:center;padding:13px 14px;pointer-events:none;overflow:hidden;white-space:nowrap}.custom-interest-row{margin-top:8px;display:flex;gap:8px}.custom-interest-row .input{flex:1}.custom-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.custom-tag{display:inline-flex;align-items:center;gap:4px;padding:5px 8px;border:1px solid var(--color-primary);border-radius:var(--radius-pill);background:var(--color-primary-soft);color:var(--color-primary);font-size:11px;font-weight:800}.custom-tag-remove{padding:0;border:0;background:none;color:var(--color-primary);font-size:14px;line-height:1;cursor:pointer;opacity:.65}.custom-tag-remove:hover{opacity:1}
-@media(max-width:900px){.profile-main{padding-top:85px;padding-left:25px;align-items:flex-start;flex-wrap:wrap}.profile-main>img{left:25px}.profile-stats{margin-left:auto}.profile-grid{grid-template-columns:1fr}.profile-grid aside{display:grid;grid-template-columns:1fr 1fr;gap:14px}.merchant-grid{grid-template-columns:1fr}}@media(max-width:600px){.profile-cover{height:160px}.profile-main{margin:-35px 10px 0}.profile-main>img{width:90px;height:90px}.profile-copy{min-width:100%}.profile-copy>div:first-child{align-items:flex-start;flex-direction:column}.profile-stats{margin-left:0}.profile-main>.btn{margin-left:auto}.avatar-editor{align-items:flex-start}.avatar-editor>div{grid-template-columns:1fr}.profile-grid .activity-grid{grid-template-columns:1fr}.profile-grid aside{grid-template-columns:1fr}.merchant-head{flex-direction:column}.profile-tabs{gap:12px;overflow:auto}.activity-tools{align-items:flex-start;flex-direction:column}.activity-tools button{width:100%;justify-content:center;padding:8px;border:1px solid var(--color-line);border-radius:8px;background:#fff}}
+.profile-page{padding:30px 0 70px}
+.profile-cover{position:relative;height:220px;overflow:hidden;border-radius:var(--radius-xl);background:linear-gradient(120deg,#ffad87,#ff6b45 40%,#7256c7)}
+.profile-pattern{position:absolute;inset:0;background:radial-gradient(circle at 18% 120%,transparent 0 110px,rgba(255,255,255,.1) 111px 150px,transparent 151px),radial-gradient(circle at 85% -20%,transparent 0 100px,rgba(255,255,255,.1) 101px 155px,transparent 156px)}
+.profile-cover button{position:absolute;right:18px;top:18px;padding:8px 11px;border:0;border-radius:var(--radius-pill);background:rgba(255,255,255,.85);display:flex;gap:5px;font-size:10px}
+.profile-main{position:relative;margin:-55px 26px 0;min-height:150px;padding:22px 25px 22px 155px;border-radius:var(--radius-lg);background:#fff;box-shadow:var(--shadow-card);display:flex;align-items:center;gap:20px}
+.profile-main>img{position:absolute;left:25px;top:-35px;width:112px;height:112px;border:5px solid #fff;border-radius:30px;object-fit:cover}
+.profile-copy{flex:1;min-width:0}
+.profile-copy>div:first-child{display:flex;align-items:center;gap:12px}
+.profile-copy h1{display:flex;align-items:center;gap:6px;margin:0;font-size:25px}
+.profile-copy h1 svg{color:var(--color-mint)}
+.location{display:flex;align-items:center;color:var(--color-ink-soft);font-size:10px}
+.profile-copy p{margin:9px 0;color:var(--color-ink-soft);font-size:12px}
+.profile-stats{display:flex;gap:24px}
+.profile-stats div{display:flex;align-items:center;flex-direction:column}
+.profile-stats b{font-size:18px}
+.profile-stats span{color:var(--color-ink-soft);font-size:9px}
+.profile-main>.btn{font-size:11px}
+.profile-grid{display:grid;grid-template-columns:1fr 280px;gap:20px;margin-top:30px}
+.profile-tabs{display:flex;gap:22px;margin-bottom:18px;border-bottom:1px solid var(--color-line)}
+.profile-tabs button{padding:12px 2px;border:0;border-bottom:2px solid transparent;background:none;color:var(--color-ink-soft);font-weight:700;white-space:nowrap}
+.profile-tabs button.active{border-color:var(--color-primary);color:var(--color-ink)}
+.profile-grid .activity-grid{grid-template-columns:1fr 1fr}
+.side-card{margin-bottom:15px;padding:20px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}
+.side-card h3{font-size:14px}
+.side-card>a,.side-action{padding:11px 0;border:0;border-bottom:1px solid var(--color-line);background:none;display:flex;align-items:center;gap:9px;font-size:11px;color:var(--color-ink);text-align:left}
+.side-action{width:100%}
+.side-card>a svg:first-child,.side-action svg:first-child{width:16px;color:var(--color-primary)}
+.side-card>a svg:last-child,.side-action svg:last-child{width:14px;margin-left:auto;color:var(--color-ink-soft)}
+.credit{background:var(--color-ink);color:#fff}
+.credit>div{display:flex;align-items:center;gap:7px;color:var(--color-sun);font-size:12px}
+.credit strong{display:block;margin:15px 0 7px;font-size:35px}
+.credit strong small{font-size:12px;color:#8f98a8}
+.credit p{margin:0;color:#aab1bf;font-size:9px;line-height:1.7}
+.hidden-file{display:none}
+.edit-panel{margin:20px 26px 0;padding:22px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}
+.avatar-editor{display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:12px;border:1px solid var(--color-line);border-radius:var(--radius-md);background:var(--color-bg)}
+.avatar-editor>img{width:76px;height:76px;border-radius:22px;object-fit:cover;background:#fff}
+.avatar-editor>div{min-width:0;flex:1;display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:10px}
+.avatar-editor b{font-size:13px}
+.avatar-editor .btn{height:36px;font-size:11px}
+.edit-panel .form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.edit-panel label{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:800}
+.edit-panel>label{margin-top:12px}
+.date-picker-wrapper{position:relative}
+.date-picker-wrapper .date-native{color:transparent;-webkit-text-fill-color:transparent}
+.date-picker-wrapper .date-overlay{position:absolute;inset:0;display:flex;align-items:center;padding:13px 14px;pointer-events:none;overflow:hidden;white-space:nowrap}
+.interest-editor{margin-top:12px}
+.interest-presets{display:flex;flex-wrap:wrap;gap:8px}
+.interest-presets button{padding:7px 10px;border:1px solid var(--color-line);border-radius:var(--radius-pill);background:#fff;color:var(--color-ink-soft);font-size:11px;font-weight:800}
+.interest-presets button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary)}
+.custom-interest-row{display:flex;gap:8px;margin-top:8px}
+.custom-interest-row .input{flex:1}
+.custom-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.custom-tag{display:inline-flex;align-items:center;gap:4px;padding:5px 8px;border:1px solid var(--color-primary);border-radius:var(--radius-pill);background:var(--color-primary-soft);color:var(--color-primary);font-size:11px;font-weight:800}
+.custom-tag-remove{padding:0;border:0;background:none;color:var(--color-primary);font-size:14px;line-height:1;cursor:pointer;opacity:.65}
+.custom-tag-remove:hover{opacity:1}
+.edit-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.form-error{padding:9px;border-radius:8px;background:#ffeaed;color:var(--color-danger);font-size:10px}
+.empty-state{padding:36px;background:#fff;border:1px dashed var(--color-line);border-radius:var(--radius-md);color:var(--color-ink-soft);text-align:center}
+.empty-state.small{padding:20px;font-size:11px}
+.managed-activity{display:grid;gap:8px}
+.activity-tools{padding:10px;border:1px solid var(--color-line);border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.activity-tools span{padding:5px 7px;border-radius:6px;background:var(--color-mint-soft);color:var(--color-mint);font-size:10px;font-weight:800}
+.activity-tools button{border:0;background:none;color:var(--color-primary);display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800}
+.merchant-panel{padding:22px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}
+.merchant-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
+.merchant-head h2{margin:4px 0 6px}
+.merchant-head p{margin:0;color:var(--color-ink-soft);font-size:12px}
+.merchant-head i{padding:7px 10px;border-radius:8px;background:var(--color-primary-soft);color:var(--color-primary);font-size:11px;font-style:normal;font-weight:800;white-space:nowrap}
+.merchant-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.merchant-form-card{padding:16px;border:1px solid var(--color-line);border-radius:12px;background:var(--color-bg)}
+.merchant-form-card h3{margin:0 0 14px}
+.merchant-form-card label{display:flex;flex-direction:column;gap:6px;margin-top:11px;font-size:11px;font-weight:800}
+.merchant-form-card .btn{width:100%;margin-top:14px;justify-content:center}
+.merchant-status{min-height:36px;margin:12px 0 0!important;color:var(--color-ink-soft);font-size:11px!important}
+.merchant-presets{margin-bottom:2px}
+.danger-card{border-color:#ffd2d8;background:#fffafa}
+.danger-card>div{display:flex;align-items:center;gap:8px}
+.danger-card h3{margin:0}
+.danger-card svg{color:var(--color-danger)}
+.danger-card p{margin:10px 0 14px;color:var(--color-ink-soft);font-size:10px;line-height:1.7}
+.delete-account{width:100%;padding:10px;border:1px solid #ffd2d8;border-radius:8px;background:#fff;color:var(--color-danger);display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;font-weight:800}
+.account-modal{position:fixed;z-index:100;inset:0;padding:18px;background:rgba(13,21,34,.55);display:grid;place-items:center}
+.account-modal>div{position:relative;width:min(100%,460px);padding:30px;background:#fff;border-radius:16px;box-shadow:var(--shadow-float)}
+.modal-close{position:absolute;right:16px;top:16px;border:0;background:none;color:var(--color-ink-soft)}
+.modal-close svg{width:18px}
+.modal-icon{width:52px;height:52px;border-radius:50%;background:#ffeaed;color:var(--color-danger);display:grid;place-items:center}
+.modal-icon.checkin{background:var(--color-primary-soft);color:var(--color-primary)}
+.modal-icon svg{width:24px}
+.account-modal h2{margin:14px 0 8px}
+.account-modal p{color:var(--color-ink-soft);font-size:12px;line-height:1.7}
+.account-modal label{display:flex;flex-direction:column;gap:6px;margin-top:12px;font-size:11px;font-weight:800}
+.account-modal .textarea{min-height:76px}
+.account-modal footer{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.account-modal .btn{padding:10px 14px;font-size:11px}
+.account-modal .btn:disabled{opacity:.55;cursor:not-allowed}
+.checkin-modal{width:min(100%,720px)!important;max-height:90vh;overflow:auto;text-align:left}
+.checkin-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}
+.checkin-summary div{padding:12px;border:1px solid var(--color-line);border-radius:10px;background:var(--color-bg)}
+.checkin-summary b{display:block;font-size:22px}
+.checkin-summary span{font-size:10px;color:var(--color-ink-soft);font-weight:800}
+.checkin-actions{display:flex;gap:8px;margin-bottom:12px}
+.checkin-actions .btn{justify-content:center}
+.qr-loading{padding:32px;border:1px dashed var(--color-line);border-radius:12px;color:var(--color-ink-soft);text-align:center}
+.qr-panel{padding:14px;border:1px solid var(--color-line);border-radius:12px;background:#fff}
+.qr-image{display:block;width:220px;height:220px;margin:4px auto 16px;border:1px solid var(--color-line);border-radius:12px}
+.checkin-lines{display:grid;gap:8px;margin:12px 0}
+.checkin-lines span{min-width:0;padding:9px;border-radius:8px;background:var(--color-bg);display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:10px;word-break:break-all}
+.checkin-lines b{color:var(--color-ink-soft);white-space:nowrap}
+.registration-panel{margin-top:16px}
+.registration-panel h3{margin:0 0 10px;font-size:14px}
+.registration-list{display:grid;gap:8px}
+.registration-row{display:grid;grid-template-columns:40px 1fr auto;align-items:center;gap:10px;padding:10px;border:1px solid var(--color-line);border-radius:10px;background:#fff}
+.registration-row img{width:40px;height:40px;border-radius:50%;object-fit:cover;background:var(--color-bg)}
+.registration-row div{min-width:0}
+.registration-row b{display:block;font-size:12px}
+.registration-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-ink-soft);font-size:10px}
+.status-tag{padding:6px 8px;border-radius:8px;background:var(--color-primary-soft);color:var(--color-primary);font-size:10px;font-style:normal;font-weight:800;white-space:nowrap}
+.status-tag.done{background:var(--color-mint-soft);color:var(--color-mint)}
+.status-tag.waiting{background:#fff5d8;color:#9b6b00}
+.status-tag.cancelled{background:#f1f2f5;color:var(--color-ink-soft)}
+@media(max-width:900px){
+  .profile-main{padding-top:85px;padding-left:25px;align-items:flex-start;flex-wrap:wrap}
+  .profile-main>img{left:25px}
+  .profile-stats{margin-left:auto}
+  .profile-grid{grid-template-columns:1fr}
+  .profile-grid aside{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .merchant-grid{grid-template-columns:1fr}
+}
+@media(max-width:600px){
+  .profile-cover{height:160px}
+  .profile-main{margin:-35px 10px 0}
+  .profile-main>img{width:90px;height:90px}
+  .profile-copy{min-width:100%}
+  .profile-copy>div:first-child{align-items:flex-start;flex-direction:column}
+  .profile-stats{margin-left:0}
+  .profile-main>.btn{margin-left:auto}
+  .avatar-editor{align-items:flex-start}
+  .avatar-editor>div{grid-template-columns:1fr}
+  .edit-panel .form-grid,.profile-grid .activity-grid{grid-template-columns:1fr}
+  .profile-grid aside{grid-template-columns:1fr}
+  .merchant-head{flex-direction:column}
+  .profile-tabs{gap:12px;overflow:auto}
+  .activity-tools{align-items:flex-start;flex-direction:column}
+  .activity-tools button{width:100%;justify-content:center;padding:8px;border:1px solid var(--color-line);border-radius:8px;background:#fff}
+  .checkin-summary{grid-template-columns:1fr}
+  .registration-row{grid-template-columns:40px 1fr}
+  .registration-row .status-tag{grid-column:2}
+}
 </style>
