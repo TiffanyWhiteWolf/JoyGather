@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
-import { Bell, ChevronDown, Compass, FileText, LogOut, Map, Menu, MessageCircle, Plus, Sparkles, Users, X } from 'lucide-vue-next'
+import { Bell, ChevronDown, Compass, FileText, LogOut, Map, Menu, MessageCircle, Plus, QrCode, Sparkles, Users, X } from 'lucide-vue-next'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
-import { apiGet, clearAuthStorage, logout as apiLogout } from '@/lib/api'
+import { apiGet, apiPost, clearAuthStorage, logout as apiLogout } from '@/lib/api'
+import UserQrCode from '@/components/common/UserQrCode.vue'
+import QrScannerModal from '@/components/common/QrScannerModal.vue'
 import type { User } from '@/types'
 
 const app = useAppStore()
@@ -12,6 +13,9 @@ const router = useRouter()
 const menuOpen = ref(false)
 const cityOpen = ref(false)
 const noticeOpen = ref(false)
+const qrOpen = ref(false)
+const qrTab = ref<'my' | 'scan'>('my')
+const showQrScanner = ref(false)
 const currentUser = ref<User | null>(null)
 const cities = ['杭州', '上海', '南京', '苏州']
 const notices = ['活动报名和候补通知会在这里显示', '商家审核结果会通过站内通知同步', '小队新消息请前往消息页查看']
@@ -45,6 +49,20 @@ async function logout() {
   currentUser.value = null
   await router.push('/')
   app.showToast('已退出登录')
+}
+
+async function handleScanned(userId: string, _nickname: string) {
+  showQrScanner.value = false
+  if (userId === currentUser.value?.id) {
+    alert('这是你自己的二维码')
+    return
+  }
+  try {
+    await apiPost('/friends/requests', { userId, source: 'QR_CODE', message: '' })
+    alert('好友申请已发送！')
+  } catch (err) {
+    alert(err instanceof Error ? err.message : '发送好友申请失败')
+  }
 }
 
 function handleAuthChanged() {
@@ -92,6 +110,22 @@ onBeforeUnmount(() => {
               <p v-for="item in notices" :key="item">{{ item }}</p>
             </div>
           </div>
+          <div v-if="currentUser" class="top-popover-wrap">
+            <button class="icon-button qr" @click="qrOpen=!qrOpen;qrTab='my'"><QrCode :size="19" /></button>
+            <div v-if="qrOpen" class="top-popover qr-popover">
+              <div class="qr-tabs">
+                <button :class="{active:qrTab==='my'}" @click="qrTab='my'">我的二维码</button>
+                <button :class="{active:qrTab==='scan'}" @click="qrTab='scan'">扫一扫</button>
+              </div>
+              <div v-if="qrTab==='my'" class="qr-panel">
+                <UserQrCode :user-id="currentUser.id" :nickname="currentUser.nickname" />
+              </div>
+              <div v-else class="qr-panel qr-scan-panel">
+                <p>扫描其他用户的二维码即可发送好友申请</p>
+                <button class="btn btn-primary btn-sm" @click="showQrScanner=true;qrOpen=false">打开摄像头</button>
+              </div>
+            </div>
+          </div>
           <RouterLink v-if="currentUser" to="/profile" class="avatar-link"><img :src="currentUser.avatar" :alt="currentUser.nickname" /></RouterLink>
           <button v-if="currentUser" class="icon-button logout-button" title="退出登录" @click="logout"><LogOut :size="18" /></button>
           <RouterLink v-else to="/auth" class="btn btn-outline btn-sm">登录</RouterLink>
@@ -104,6 +138,7 @@ onBeforeUnmount(() => {
       <div class="container footer-inner"><div class="brand brand-light"><span class="brand-mark"><span></span><span></span><span></span></span><span>趣聚</span></div><p>去见面，去同频，去发现城市的另一面。</p><div class="footer-links"><RouterLink to="/auth">登录 / 注册</RouterLink><RouterLink to="/admin">运营后台 →</RouterLink></div></div>
     </footer>
   </div>
+  <QrScannerModal v-if="showQrScanner" @close="showQrScanner=false" @scanned="handleScanned" />
 </template>
 
 <style scoped>
@@ -116,4 +151,10 @@ onBeforeUnmount(() => {
 .notice-menu b{display:block;margin-bottom:6px;font-size:12px}
 .notice-menu p{margin:0;padding:8px 0;border-top:1px solid var(--color-line);color:var(--color-ink-soft);font-size:11px;line-height:1.5}
 .logout-button{color:var(--color-danger)}
+.qr-popover{width:280px;padding:0;overflow:hidden}
+.qr-tabs{display:flex;border-bottom:1px solid var(--color-line)}
+.qr-tabs button{flex:1;padding:10px;border:0;background:none;font-size:13px;font-weight:800;color:var(--color-ink-soft);cursor:pointer}
+.qr-tabs button.active{color:var(--color-primary);box-shadow:inset 0 -2px var(--color-primary)}
+.qr-panel{padding:16px;display:flex;flex-direction:column;align-items:center}
+.qr-scan-panel p{margin:0 0 12px;color:var(--color-ink-soft);font-size:12px;text-align:center}
 </style>

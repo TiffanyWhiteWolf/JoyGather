@@ -107,6 +107,28 @@ public class ActivityService {
         return result;
     }
 
+    public List<ActivityOpsDtos.RegistrationManagementDto> registrationManagement(String activityId, String organizerId) {
+        ActivityDto activity = requireActivity(activityId);
+        if (!organizerId.equals(activity.getOrganizer().getId())) throw new IllegalStateException("只有发起人可以查看签到管理");
+        return jdbc.query("select r.id, r.user_id, u.nickname, u.avatar, r.status, r.queue_position, r.created_at, r.checked_in_at "
+                        + "from registrations r join users u on u.id = r.user_id where r.activity_id = ? "
+                        + "order by case r.status when '已签到' then 1 when '已报名' then 2 when '候补中' then 3 else 4 end, r.created_at asc",
+                (rs, rowNum) -> {
+                    ActivityOpsDtos.RegistrationManagementDto dto = new ActivityOpsDtos.RegistrationManagementDto();
+                    dto.setId(rs.getString("id"));
+                    dto.setUserId(rs.getString("user_id"));
+                    dto.setNickname(rs.getString("nickname"));
+                    dto.setAvatar(rs.getString("avatar"));
+                    dto.setStatus(rs.getString("status"));
+                    dto.setQueuePosition(rs.getInt("queue_position"));
+                    Timestamp createdAt = rs.getTimestamp("created_at");
+                    Timestamp checkedInAt = rs.getTimestamp("checked_in_at");
+                    dto.setCreatedAt(createdAt == null ? null : createdAt.toLocalDateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+                    dto.setCheckedInAt(checkedInAt == null ? null : checkedInAt.toLocalDateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+                    return dto;
+                }, activityId);
+    }
+
     @Transactional
     public ActivityDto create(ActivityCreateRequest request) {
         return create(request, DbSupport.safe(request.getOrganizerId(), UserService.DEFAULT_USER_ID));

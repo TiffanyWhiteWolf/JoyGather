@@ -36,7 +36,7 @@ async function unwrap<T>(response: Response): Promise<T> {
       const body = await response.json() as { message?: string }
       if (body.message) message = body.message
     } catch { /* keep default */ }
-    if (response.status === 401 || /请先登录|登录已过期|账号已被封禁/.test(message)) clearAuthStorage()
+    if (response.status === 401 || /请先登录|登录已过期|账号已被封禁|账号已注销/.test(message)) clearAuthStorage()
     throw new Error(message)
   }
   const body = await response.json() as ApiEnvelope<T>
@@ -66,10 +66,11 @@ export async function apiPut<T>(path: string, body: unknown): Promise<T> {
   return unwrap<T>(response)
 }
 
-export async function apiDelete<T>(path: string): Promise<T> {
+export async function apiDelete<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'DELETE',
-    headers: authHeaders(),
+    headers: authHeaders(body === undefined ? undefined : { 'Content-Type': 'application/json' }),
+    body: body === undefined ? undefined : JSON.stringify(body),
   })
   return unwrap<T>(response)
 }

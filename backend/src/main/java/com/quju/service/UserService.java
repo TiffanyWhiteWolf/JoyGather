@@ -19,6 +19,7 @@ import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
@@ -101,6 +102,7 @@ public class UserService {
         if (request.isAdminLogin() && !"管理员".equals(record.user.getRole())) throw new IllegalStateException("非管理员账号，无法使用管理员后台登录");
         if (!request.isAdminLogin() && "管理员".equals(record.user.getRole())) throw new IllegalStateException("管理员账号无法在用户登录页面登录");
         if (!record.activated) throw new IllegalStateException("请先激活账号");
+        if ("已注销".equals(record.status)) throw new IllegalStateException("账号已注销，无法登录");
         if ("已封禁".equals(record.status) && !banExpired(record.banUntil)) {
             String untilStr = record.banUntil == null ? "" : "，解封日期：" + record.banUntil.toString();
             throw new IllegalStateException("账号已被封禁：" + DbSupport.safe(record.banReason, "未填写原因") + untilStr);
@@ -142,6 +144,10 @@ public class UserService {
         try {
             UserDto user = jdbc.queryForObject("select u.* from users u join sessions s on s.user_id = u.id where s.token = ? and s.expires_at > now()",
                     userMapper(), token);
+            if ("已注销".equals(user.getStatus())) {
+                jdbc.update("delete from sessions where token = ?", token);
+                throw new IllegalStateException("账号已注销，请重新注册或联系平台");
+            }
             if ("已封禁".equals(user.getStatus()) && !banExpired(user.getBanUntil())) {
                 throw new IllegalStateException(banMessage(user.getBanReason(), user.getBanUntil()));
             }
@@ -184,6 +190,11 @@ public class UserService {
         return count == null || count == 0;
     }
 
+    public List<Map<String, Object>> myMerchantApplications(String authorization) {
+        UserDto user = requireToken(authorization);
+        return jdbc.queryForList("select id, merchant_name merchantName, license_name licenseName, license_url licenseUrl, status, reason, submitted_at submittedAt, reviewed_at reviewedAt from merchant_applications where user_id = ? order by submitted_at desc", user.getId());
+    }
+
     @Transactional
     public void submitMerchantApplication(String authorization, CommonDtos.MerchantApplicationRequest request) {
         UserDto user = requireToken(authorization);
@@ -210,7 +221,48 @@ public class UserService {
     }
 
     @Transactional
+    public void cancelAccount(String authorization, CommonDtos.AccountCancellationRequest request) {
+        UserDto user = requireToken(authorization);
+        if ("管理员".equals(user.getRole())) throw new IllegalStateException("管理员账号不支持自助注销");
+        if ("已注销".equals(user.getStatus())) throw new IllegalStateException("账号已注销");
+        if (request == null || request.getPassword() == null || request.getPassword().trim().isEmpty()) {
+            throw new IllegalStateException("请输入当前密码");
+        }
+        if (!"注销账号".equals(DbSupport.safe(request.getConfirmText(), "").trim())) {
+            throw new IllegalStateException("请输入确认文案：注销账号");
+        }
+        String stored = jdbc.queryForObject("select password_hash from users where id = ?", String.class, user.getId());
+        if (!passwordMatches(request.getPassword(), stored)) throw new IllegalStateException("当前密码错误");
+
+        String reason = DbSupport.safe(request.getReason(), "用户主动注销账号").trim();
+        String suffix = user.getId().length() > 8 ? user.getId().substring(user.getId().length() - 8) : user.getId();
+        String deletedEmail = "deleted-" + user.getId() + "@deleted.quju.local";
+        String deletedNickname = "已注销用户-" + suffix;
+
+        List<String> joinedActivityIds = jdbc.queryForList(
+                "select activity_id from registrations where user_id = ? and status = '已报名'", String.class, user.getId());
+        for (String activityId : joinedActivityIds) {
+            jdbc.update("update activities set joined_count = case when joined_count > 0 then joined_count - 1 else 0 end where id = ?", activityId);
+        }
+        jdbc.update("update registrations set status = '已取消', updated_at = now() where user_id = ? and status in ('已报名','候补中')", user.getId());
+        jdbc.update("update activities set status = '已下架', offline_reason = '发起人已注销账号' where organizer_id = ? and status not in ('已结束','已下架')", user.getId());
+        jdbc.update("update teams set status = '已停用', stop_reason = '队长已注销账号' where owner_id = ? and status <> '已停用'", user.getId());
+        jdbc.update("delete from team_members where user_id = ?", user.getId());
+        jdbc.update("delete from follows where follower_id = ? or followee_id = ?", user.getId(), user.getId());
+        jdbc.update("delete from friendships where user_id = ? or friend_id = ?", user.getId(), user.getId());
+        jdbc.update("delete from friend_requests where requester_id = ? or receiver_id = ?", user.getId(), user.getId());
+        jdbc.update("delete from user_blocks where user_id = ? or blocked_user_id = ?", user.getId(), user.getId());
+        jdbc.update("update merchant_applications set status = '已取消', reason = '申请人已注销账号' where user_id = ? and status = '待审核'", user.getId());
+        jdbc.update("delete from sessions where user_id = ?", user.getId());
+        jdbc.update("update users set email = ?, password_hash = ?, nickname = ?, avatar = ?, city = '', gender = null, birthday = null, cover = null, bio = '', interests = '', following_count = 0, follower_count = 0, credit = 0, verified = 0, activated = 0, activation_token = null, status = '已注销', ban_reason = ?, ban_until = null, merchant_name = null, merchant_nickname = null, merchant_fields = null where id = ?",
+                deletedEmail, "deleted:" + UUID.randomUUID().toString().replace("-", ""),
+                deletedNickname, "https://i.pravatar.cc/160?u=deleted", reason, user.getId());
+        log(user.getId(), "CANCEL_ACCOUNT", "USER", user.getId(), reason);
+    }
+
+    @Transactional
     public void ban(String userId, String reason, String until, String actorId) {
+        if ("已注销".equals(findById(userId).getStatus())) throw new IllegalStateException("已注销账号不能封禁");
         if (reason == null || reason.trim().isEmpty() || until == null || until.trim().isEmpty()) {
             throw new IllegalStateException("封禁原因和封禁期限均为必填项");
         }
@@ -225,6 +277,7 @@ public class UserService {
 
     @Transactional
     public void unblock(String userId, String actorId) {
+        if ("已注销".equals(findById(userId).getStatus())) throw new IllegalStateException("已注销账号不能解封");
         jdbc.update("update users set status = '正常', ban_reason = null, ban_until = null where id = ?", userId);
         log(actorId, "UNBLOCK_USER", "USER", userId, "");
     }

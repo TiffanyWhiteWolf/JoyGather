@@ -20,6 +20,7 @@ public class TeamDto {
     private List<Map<String, Object>> memberRecords;
     private List<Map<String, Object>> activityRecords;
     private List<Map<String, Object>> reportRecords;
+    private String myRole;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -53,4 +54,6 @@ public class TeamDto {
     public void setActivityRecords(List<Map<String, Object>> activityRecords) { this.activityRecords = activityRecords; }
     public List<Map<String, Object>> getReportRecords() { return reportRecords; }
     public void setReportRecords(List<Map<String, Object>> reportRecords) { this.reportRecords = reportRecords; }
+    public String getMyRole() { return myRole; }
+    public void setMyRole(String myRole) { this.myRole = myRole; }
 }
