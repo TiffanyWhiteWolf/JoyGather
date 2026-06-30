@@ -18,6 +18,9 @@ target/
 backend/target/
 dist/
 frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 *.tsbuildinfo
 
 # Logs and temporary files

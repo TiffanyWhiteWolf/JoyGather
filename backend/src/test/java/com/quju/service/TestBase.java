@@ -70,6 +70,14 @@ public abstract class TestBase {
         return req;
     }
 
+    protected AuthDtos.LoginRequest adminLoginRequest(String email, String password) {
+        AuthDtos.LoginRequest req = new AuthDtos.LoginRequest();
+        req.setEmail(email);
+        req.setPassword(password);
+        req.setAdminLogin(true);
+        return req;
+    }
+
     protected ActivityCreateRequest validActivityRequest(int capacity) {
         ActivityCreateRequest req = new ActivityCreateRequest();
         req.setTitle("测试活动" + System.nanoTime());

@@ -108,10 +108,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.real-map{position:relative;min-height:600px;overflow:hidden;border:1px solid #dfe3db;border-radius:var(--radius-lg);background:#e9ece7}
+.real-map{position:relative;z-index:0;isolation:isolate;min-height:600px;overflow:hidden;border:1px solid #dfe3db;border-radius:var(--radius-lg);background:#e9ece7}
 .real-map.compact{min-height:390px}
-.leaflet-host{position:absolute;inset:0}
-.locate-btn,.map-legend,.map-error,.map-summary{position:absolute;z-index:500;background:#fff;border:0;border-radius:var(--radius-pill);box-shadow:var(--shadow-soft);display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700}
+.leaflet-host{position:absolute;z-index:0;inset:0}
+.locate-btn,.map-legend,.map-error,.map-summary{position:absolute;z-index:20;background:#fff;border:0;border-radius:var(--radius-pill);box-shadow:var(--shadow-soft);display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700}
 .locate-btn{right:18px;top:18px;padding:10px 14px}
 .map-legend{left:18px;bottom:18px;padding:10px 14px}
 .map-legend span{width:8px;height:8px;background:var(--color-primary);border-radius:50%}

@@ -34,17 +34,36 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
+  const token = localStorage.getItem('quju:token')
+  let session: { role?: string } | null = null
+
+  try {
+    session = JSON.parse(
+      localStorage.getItem('quju:session') || 'null',
+    ) as { role?: string } | null
+  } catch {
+    /* ignore */
+  }
+
+  // Protected user paths require login
   const protectedPaths = ['/create', '/drafts', '/messages', '/profile', '/check-in']
-  if (protectedPaths.some(path => to.path.startsWith(path)) && !localStorage.getItem('quju:token')) {
+  if (protectedPaths.some(path => to.path.startsWith(path)) && !token) {
     return { path: '/auth', query: { redirect: to.fullPath } }
   }
-  if (!to.path.startsWith('/admin')) return true
-  try {
-    const session = JSON.parse(localStorage.getItem('quju:session') || 'null') as { role?: string } | null
-    const token = localStorage.getItem('quju:token')
+
+
+  // Admin paths require admin role
+  if (to.path.startsWith('/admin')) {
     if (token && session?.role === '管理员') return true
-  } catch { /* redirect below */ }
-  return { path: '/auth', query: { role: 'admin', redirect: to.fullPath } }
+    return { path: '/auth', query: { role: 'admin', redirect: to.fullPath } }
+  }
+
+  // User-facing pages: admin accounts should not access
+  if (to.path !== '/auth' && token && session?.role === '管理员') {
+    return { path: '/admin' }
+  }
+
+  return true
 })
 
 export default router
