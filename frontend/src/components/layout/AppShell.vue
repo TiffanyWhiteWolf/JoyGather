@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
-import { Bell, ChevronDown, Compass, LogOut, Map, Menu, MessageCircle, Plus, Sparkles, Users, X } from 'lucide-vue-next'
+import { Bell, ChevronDown, Compass, FileText, LogOut, Map, Menu, MessageCircle, Plus, Sparkles, Users, X } from 'lucide-vue-next'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
@@ -79,9 +79,11 @@ onBeforeUnmount(() => {
             <component :is="item.icon" :size="18" />{{ item.label }}
           </RouterLink>
           <RouterLink to="/ai-planner" class="ai-mobile"><Sparkles :size="17" />AI 策划</RouterLink>
+          <RouterLink to="/drafts" class="ai-mobile"><FileText :size="17" />我的草稿</RouterLink>
         </nav>
         <div class="top-actions">
           <RouterLink to="/ai-planner" class="ai-link"><Sparkles :size="17" />AI 策划</RouterLink>
+          <RouterLink v-if="currentUser" to="/drafts" class="ai-link"><FileText :size="17" />我的草稿</RouterLink>
           <RouterLink to="/create" class="btn btn-primary btn-sm"><Plus :size="17" />发起活动</RouterLink>
           <div class="top-popover-wrap">
             <button class="icon-button notice" @click="noticeOpen = !noticeOpen"><Bell :size="19" /><span>{{ app.notifications }}</span></button>

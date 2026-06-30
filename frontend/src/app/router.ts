@@ -13,6 +13,7 @@ const router = createRouter({
         { path: 'discover', name: 'discover', component: () => import('@/views/user/DiscoverView.vue') },
         { path: 'activities/:id', name: 'activity-detail', component: () => import('@/views/user/ActivityDetailView.vue') },
         { path: 'create', name: 'create', component: () => import('@/views/user/CreateActivityView.vue') },
+        { path: 'drafts', name: 'drafts', component: () => import('@/views/user/DraftsView.vue') },
         { path: 'ai-planner', name: 'ai-planner', component: () => import('@/views/user/AiPlannerView.vue') },
         { path: 'check-in', name: 'check-in', component: () => import('@/views/user/CheckInView.vue') },
         { path: 'teams', name: 'teams', component: () => import('@/views/user/TeamsView.vue') },
@@ -33,7 +34,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const protectedPaths = ['/create', '/messages', '/profile', '/check-in']
+  const protectedPaths = ['/create', '/drafts', '/messages', '/profile', '/check-in']
   if (protectedPaths.some(path => to.path.startsWith(path)) && !localStorage.getItem('quju:token')) {
     return { path: '/auth', query: { redirect: to.fullPath } }
   }
