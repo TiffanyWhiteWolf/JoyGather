@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CalendarDays, Check, ChevronLeft, ClipboardCopy, MapPin, Save, ShieldCheck, Sparkles, Users } from 'lucide-vue-next'
 import { useAppStore } from '@/stores/app'
-import { apiGet, apiPost } from '@/lib/api'
+import { apiGet, apiPost, apiPut } from '@/lib/api'
 import LocationPicker from '@/components/map/LocationPicker.vue'
 import type { Activity, ActivityCategory, ActivityDraft } from '@/types'
 
@@ -13,6 +13,10 @@ const router = useRouter()
 const step = ref(1)
 const submitted = ref(false)
 const submitError = ref('')
+const saving = ref(false)
+const submitting = ref(false)
+const persistedDraftId = ref('')
+const savedAt = ref('尚未保存')
 const longitude = ref(120.15507)
 const latitude = ref(30.274085)
 const categories: ActivityCategory[] = ['城市探索', '户外运动', '桌游聚会', '学习交流', '运动健身', '公益活动']
@@ -27,7 +31,6 @@ const form = reactive<ActivityDraft>({
   date: '', startTime: '', endTime: '', location: '', district: '拱墅区', capacity: 20,
   deadline: '', price: 0, minAge: 16, safetyNote: '', joinFields: ['真实姓名', '手机号码'], updatedAt: '',
 })
-const savedAt = computed(() => app.draft?.updatedAt || '尚未保存')
 const reviewMode = computed(() => form.capacity > 50 ? '人工审核' : 'AI 自动审核')
 
 interface ActivityRequest {
@@ -160,28 +163,73 @@ function toActivityRequest(): ActivityRequest {
 }
 
 async function next() {
-  if (!validateCurrentStep()) return
-  if (step.value < 4) step.value++
-  else {
-    try {
-      await apiPost<Activity>('/activities', toActivityRequest())
-      app.submitActivity({ ...form })
-      await app.refreshUserState()
-      submitted.value = true
-    } catch (err) {
-      submitError.value = err instanceof Error ? err.message : '创建活动失败，请稍后重试'
-    }
+  if (submitting.value || saving.value) return
+  if (step.value < 4) {
+    if (!validateCurrentStep()) return
+    const saved = await persistDraft(false)
+    if (saved) step.value++
+    return
+  }
+
+  for (const targetStep of [1, 2, 3]) {
+    step.value = targetStep
+    if (!validateCurrentStep()) return
+  }
+  step.value = 4
+  submitting.value = true
+  try {
+    const saved = await persistDraft(false)
+    if (!saved || !persistedDraftId.value) return
+    await apiPost<Activity>(`/activities/${persistedDraftId.value}/submit`, {})
+    app.clearDraft()
+    await app.refreshUserState()
+    submitted.value = true
+  } catch (err) {
+    submitError.value = err instanceof Error ? err.message : '提交审核失败，请稍后重试'
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function persistDraft(notify = true) {
+  saving.value = true
+  submitError.value = ''
+  try {
+    const saved = persistedDraftId.value
+      ? await apiPut<Activity>(`/activities/drafts/${persistedDraftId.value}`, toActivityRequest())
+      : await apiPost<Activity>('/activities/drafts', toActivityRequest())
+    persistedDraftId.value = saved.id
+    form.id = saved.id
+    savedAt.value = (saved.updatedAt || new Date().toISOString()).replace('T', ' ').slice(0, 16)
+    if (notify) app.showToast('草稿已保存，可在“我的草稿”中继续编辑')
+    return saved
+  } catch (err) {
+    submitError.value = err instanceof Error ? err.message : '保存草稿失败'
+    return null
+  } finally {
+    saving.value = false
   }
 }
 
 async function save() {
-  try {
-    await apiPost<Activity>('/activities/drafts', toActivityRequest())
-    app.saveDraft({ ...form })
-  } catch (err) {
-    submitError.value = err instanceof Error ? err.message : '保存草稿失败'
-  }
+  await persistDraft(true)
 }
+
+function startNewActivity() {
+  submitted.value = false
+  step.value = 1
+  persistedDraftId.value = ''
+  savedAt.value = '尚未保存'
+  submitError.value = ''
+  Object.assign(form, {
+    id: `draft-${Date.now()}`, title: '', category: '城市探索', tags: '', summary: '',
+    date: '', startTime: '', endTime: '', location: '', district: '拱墅区', capacity: 20,
+    deadline: '', price: 0, minAge: 16, safetyNote: '', joinFields: ['真实姓名', '手机号码'], updatedAt: '',
+  })
+  longitude.value = 120.15507
+  latitude.value = 30.274085
+}
+
 function toggleField(field: string) {
   form.joinFields = form.joinFields.includes(field) ? form.joinFields.filter(item => item !== field) : [...form.joinFields, field]
 }
@@ -194,7 +242,38 @@ function selectLocation(point: { location: string; district: string; longitude: 
 }
 
 onMounted(async () => {
-  if (app.draft) Object.assign(form, app.draft)
+  const draftId = String(route.query.draft || '')
+  if (draftId) {
+    try {
+      const drafts = await apiGet<Activity[]>('/activities/drafts')
+      const source = drafts.find(item => item.id === draftId)
+      if (!source) throw new Error('草稿不存在或已提交')
+      persistedDraftId.value = source.id
+      Object.assign(form, {
+        id: source.id,
+        title: source.title === '未命名草稿' ? '' : source.title,
+        category: source.category,
+        tags: source.tags.join('、'),
+        summary: source.summary === '草稿暂未填写简介' ? '' : source.summary,
+        date: source.date || source.startAt?.slice(0, 10) || '',
+        startTime: source.startAt?.slice(11, 16) || '',
+        endTime: source.endAt?.slice(11, 16) || '',
+        deadline: source.deadline?.slice(0, 16) || '',
+        location: source.location,
+        district: source.district,
+        capacity: source.capacity,
+        price: Number(source.price),
+        minAge: source.minAge || 0,
+        safetyNote: source.safetyNote || '',
+        joinFields: source.joinFields || [],
+      })
+      longitude.value = Number(source.longitude)
+      latitude.value = Number(source.latitude)
+      savedAt.value = (source.updatedAt || '').replace('T', ' ').slice(0, 16) || '已保存'
+    } catch (err) {
+      submitError.value = err instanceof Error ? err.message : '草稿加载失败'
+    }
+  }
   const cloneId = String(route.query.clone || '')
   if (cloneId) {
     const source = await apiGet<Activity>(`/activities/${cloneId}`)
@@ -221,10 +300,10 @@ onMounted(async () => {
 
 <template>
   <div class="container create-page">
-    <div class="create-head"><RouterLink to="/"><ChevronLeft :size="17" />退出编辑</RouterLink><div><span>草稿：{{ savedAt }}</span><button class="btn btn-outline btn-sm" @click="save"><Save :size="16" />保存草稿</button></div></div>
+    <div class="create-head"><RouterLink :to="persistedDraftId ? '/drafts' : '/'"><ChevronLeft :size="17" />退出编辑</RouterLink><div><span>草稿：{{ savedAt }}</span><button class="btn btn-outline btn-sm" :disabled="saving || submitting" @click="save"><Save :size="16" />{{ saving ? '保存中' : '保存草稿' }}</button></div></div>
     <div class="stepper"><button v-for="(name,i) in ['基础信息','时间地点','参与设置','预览提交']" :key="name" :class="{active:step>=i+1}" @click="step=i+1"><span><Check v-if="step>i+1" :size="13" /><template v-else>{{ i+1 }}</template></span><b>{{ name }}</b></button></div>
 
-    <div v-if="submitted" class="submit-result panel"><span><ShieldCheck :size="34" /></span><h1>{{ reviewMode === '人工审核' ? '已进入人工审核' : '活动发布成功' }}</h1><p>{{ reviewMode === '人工审核' ? '报名人数超过 50 人，已按规则转交运营人员审核。' : '内容安全检查未发现风险，活动已经进入报名阶段。' }}</p><div><button class="btn btn-outline" @click="submitted=false;step=1">再创建一场</button><button class="btn btn-primary" @click="router.push('/profile')">查看活动管理</button></div></div>
+    <div v-if="submitted" class="submit-result panel"><span><ShieldCheck :size="34" /></span><h1>{{ reviewMode === '人工审核' ? '已进入人工审核' : '活动发布成功' }}</h1><p>{{ reviewMode === '人工审核' ? '报名人数超过 50 人，已按规则转交运营人员审核。' : '内容安全检查未发现风险，活动已经进入报名阶段。' }}</p><div><button class="btn btn-outline" @click="startNewActivity">再创建一场</button><button class="btn btn-primary" @click="router.push('/profile')">查看活动管理</button></div></div>
 
     <div v-else class="create-layout">
       <section class="panel">
@@ -258,7 +337,7 @@ onMounted(async () => {
         </template>
 
         <p v-if="submitError" class="form-error">{{ submitError }}</p>
-        <div class="form-actions"><button v-if="step>1" class="btn btn-outline" @click="step--">上一步</button><button class="btn btn-primary" @click="next">{{ step===4?'提交审核':'保存并继续' }}</button></div>
+        <div class="form-actions"><button v-if="step>1" class="btn btn-outline" :disabled="saving || submitting" @click="step--">上一步</button><button class="btn btn-primary" :disabled="saving || submitting" @click="next">{{ submitting ? '提交中…' : saving ? '保存中…' : step===4 ? '提交审核' : '保存并继续' }}</button></div>
       </section>
       <aside><div class="ai-helper"><Sparkles /><h3>没想好怎么写？</h3><p>AI 可以生成可继续修改的标题、亮点与活动流程。</p><RouterLink to="/ai-planner">让 AI 帮我策划 →</RouterLink></div><div class="tips"><b>发布前小提示</b><p>✓ 地点可被参与者清楚找到</p><p>✓ 截止时间早于活动开始</p><p>✓ 户外活动写明安全须知</p><p>✓ 超过 50 人将人工审核</p></div></aside>
     </div>
