@@ -20,6 +20,7 @@ const router = createRouter({
         { path: 'teams', name: 'teams', component: () => import('@/views/user/TeamsView.vue') },
         { path: 'teams/:id/manage', name: 'team-manage', component: () => import('@/views/user/TeamManageView.vue') },
         { path: 'messages', name: 'messages', component: () => import('@/views/user/MessagesView.vue') },
+        { path: 'friends', redirect: '/messages' },
         { path: 'profile', name: 'profile', component: () => import('@/views/user/ProfileView.vue') },
       ],
     },

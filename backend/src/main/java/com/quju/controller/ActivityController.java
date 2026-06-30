@@ -133,6 +133,11 @@ public class ActivityController {
         return ApiResponse.success(activityService.cancel(id, userId));
     }
 
+    @GetMapping("/{id}/participants")
+    public ApiResponse<List<Map<String, Object>>> participants(@PathVariable String id) {
+        return ApiResponse.success(activityService.participants(id));
+    }
+
     @GetMapping("/registrations/me")
     public ApiResponse<Map<String, String>> myRegistrations(@RequestHeader(value = "Authorization", required = false) String authorization) {
         String userId = userService.requireToken(authorization).getId();

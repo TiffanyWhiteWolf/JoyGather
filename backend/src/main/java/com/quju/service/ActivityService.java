@@ -132,6 +132,14 @@ public class ActivityService {
                 }, activityId);
     }
 
+    public List<Map<String, Object>> participants(String activityId) {
+        return jdbc.queryForList(
+            "select r.status, u.id, u.nickname, u.avatar, u.city, u.interests " +
+            "from registrations r join users u on u.id = r.user_id " +
+            "where r.activity_id = ? and r.status in ('已报名','已签到') " +
+            "order by r.created_at asc", activityId);
+    }
+
     @Transactional
     public ActivityDto create(ActivityCreateRequest request) {
         return create(request, DbSupport.safe(request.getOrganizerId(), UserService.DEFAULT_USER_ID));
