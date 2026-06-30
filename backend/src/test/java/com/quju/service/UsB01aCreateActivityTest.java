@@ -60,6 +60,14 @@ class UsB01aCreateActivityTest extends TestBase {
     }
 
     @Test
+    @DisplayName("US-B01a-4b: 人数上限小于2时应阻止提交")
+    void shouldRejectCapacityLessThanTwo() {
+        ActivityCreateRequest req = validActivityRequest(1);
+        Exception ex = assertThrows(Exception.class, () -> activityService.create(req));
+        assertTrue(ex.getMessage().contains("大于等于2"));
+    }
+
+    @Test
     @DisplayName("US-B01a-5: 必填字段缺失时阻止提交并提示")
     void shouldRejectIncompleteRequest() {
         ActivityCreateRequest badReq = new ActivityCreateRequest();
