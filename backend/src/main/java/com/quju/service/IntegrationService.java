@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -118,10 +119,14 @@ public class IntegrationService {
     }
 
     public List<String> classifyImages(List<String> urls) {
-        if (urls == null || urls.isEmpty()) return Collections.emptyList();
+        return classifyImagesDetailed(urls).categories;
+    }
+
+    public ImageClassificationResult classifyImagesDetailed(List<String> urls) {
+        if (urls == null || urls.isEmpty()) return new ImageClassificationResult(Collections.<String>emptyList(), false, "请先上传图片。");
         if (aiBaseUrl == null || aiBaseUrl.trim().isEmpty() || aiApiKey == null || aiApiKey.trim().isEmpty()) {
             logThirdParty("AI", "CLASSIFY_IMAGES", "DEGRADED", DbSupport.join(urls), "", "AI 未配置", 0);
-            return localImageCategories(urls.size());
+            return new ImageClassificationResult(localImageCategories(urls.size()), false, "AI 服务未配置，已切换为手动分类，不影响发布。");
         }
         long started = System.currentTimeMillis();
         try {
@@ -129,10 +134,11 @@ public class IntegrationService {
             HttpHeaders headers = aiHeaders();
             restTemplate.postForObject(aiBaseUrl + "/chat/completions", new HttpEntity<Map<String, Object>>(payload, headers), Map.class);
             logThirdParty("AI", "CLASSIFY_IMAGES", "SUCCESS", String.valueOf(urls.size()), "", "", elapsed(started));
+            return new ImageClassificationResult(localImageCategories(urls.size()), true, "AI 已完成初步分类，请确认或调整后发布。");
         } catch (Exception ex) {
             logThirdParty("AI", "CLASSIFY_IMAGES", "FAILED", String.valueOf(urls.size()), "", trim(ex.getMessage()), elapsed(started));
+            return new ImageClassificationResult(localImageCategories(urls.size()), false, "AI 分类暂时不可用，已切换为手动分类，不影响发布。");
         }
-        return localImageCategories(urls.size());
     }
 
     public List<CommonDtos.GeoPoint> searchAmap(String keyword, String city) {
@@ -238,7 +244,20 @@ public class IntegrationService {
 
     private List<String> localImageCategories(int size) {
         List<String> categories = Arrays.asList("合影", "场地", "过程记录", "物资", "成果展示");
-        return categories.subList(0, Math.min(size, categories.size()));
+        List<String> result = new ArrayList<String>();
+        for (int i = 0; i < size; i++) result.add(categories.get(i % categories.size()));
+        return result;
+    }
+
+    public static class ImageClassificationResult {
+        public final List<String> categories;
+        public final boolean aiAvailable;
+        public final String notice;
+        public ImageClassificationResult(List<String> categories, boolean aiAvailable, String notice) {
+            this.categories = categories;
+            this.aiAvailable = aiAvailable;
+            this.notice = notice;
+        }
     }
 
     private List<CommonDtos.GeoPoint> fallbackPlaces(String keyword) {

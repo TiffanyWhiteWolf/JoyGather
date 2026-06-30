@@ -56,6 +56,30 @@ export interface Activity {
   updatedAt?: string
 }
 
+export interface Friend {
+  userId: string
+  nickname: string
+  avatar: string
+  city: string
+  bio?: string
+  interests?: string
+  remark?: string
+  groupName?: string
+}
+
+export interface FriendRequest {
+  id: string
+  requesterId: string
+  receiverId: string
+  source: string
+  message: string
+  status: '待处理' | '已通过' | '已拒绝'
+  createdAt: string
+  handledAt?: string
+  requesterNickname: string
+  requesterAvatar: string
+}
+
 export interface Team {
   id: string
   name: string
@@ -69,8 +93,8 @@ export interface Team {
   status?: '正常' | '已停用'
   stopReason?: string
   ownerId?: string
-  ownerNickname?: string
   myRole?: '队长' | '管理员' | '成员'
+  ownerNickname?: string
   memberRecords?: Record<string, unknown>[]
   activityRecords?: Record<string, unknown>[]
   reportRecords?: Record<string, unknown>[]
@@ -152,6 +176,7 @@ export interface Message {
   mine: boolean
   read: boolean
   recalled?: boolean
+  senderAvatar?: string
 }
 
 export interface Conversation {
@@ -164,5 +189,52 @@ export interface Conversation {
   lastTime: string
   online?: boolean
   teamId?: string
+  pinned?: boolean
+  muted?: boolean
+  friendUserId?: string
   messages: Message[]
+}
+
+export interface SummaryImage {
+  url: string
+  aiCategory: string
+  confirmedCategory: string
+}
+
+export interface ActivitySummary {
+  id: string
+  activityId: string
+  authorId: string
+  authorName: string
+  authorAvatar: string
+  title: string
+  content: string
+  imageUrls: string[]
+  categories: string[]
+  images: SummaryImage[]
+  createdAt: string
+}
+
+export interface ActivityReview {
+  id: string
+  userId: string
+  nickname: string
+  avatar: string
+  rating: number
+  content: string
+  createdAt: string
+  mine: boolean
+}
+
+export interface ActivityAfterEvent {
+  summary?: ActivitySummary
+  reviews: ActivityReview[]
+  averageRating: number
+  reviewCount: number
+  canPublishSummary: boolean
+  canReview: boolean
+  reviewExpired: boolean
+  reviewDeadline?: string
+  eligibilityMessage: string
+  myReview?: ActivityReview
 }

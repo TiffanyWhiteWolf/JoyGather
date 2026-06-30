@@ -11,6 +11,7 @@ const router = createRouter({
       path: '/', component: AppShell, children: [
         { path: '', name: 'home', component: () => import('@/views/user/HomeView.vue') },
         { path: 'discover', name: 'discover', component: () => import('@/views/user/DiscoverView.vue') },
+        { path: 'activities/:id/after-event', name: 'activity-after-event', component: () => import('@/views/user/ActivityAfterEventView.vue') },
         { path: 'activities/:id', name: 'activity-detail', component: () => import('@/views/user/ActivityDetailView.vue') },
         { path: 'create', name: 'create', component: () => import('@/views/user/CreateActivityView.vue') },
         { path: 'drafts', name: 'drafts', component: () => import('@/views/user/DraftsView.vue') },
@@ -19,6 +20,7 @@ const router = createRouter({
         { path: 'teams', name: 'teams', component: () => import('@/views/user/TeamsView.vue') },
         { path: 'teams/:id/manage', name: 'team-manage', component: () => import('@/views/user/TeamManageView.vue') },
         { path: 'messages', name: 'messages', component: () => import('@/views/user/MessagesView.vue') },
+        { path: 'friends', redirect: '/messages' },
         { path: 'profile', name: 'profile', component: () => import('@/views/user/ProfileView.vue') },
       ],
     },

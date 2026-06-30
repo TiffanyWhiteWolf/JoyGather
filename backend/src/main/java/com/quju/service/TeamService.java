@@ -28,7 +28,10 @@ public class TeamService {
 
     public List<TeamDto> list(String query, boolean includeStopped, String userId) {
         String normalized = "%" + (query == null ? "" : query.trim().toLowerCase()) + "%";
-        String sql = "select t.* from teams t left join users u on u.id = t.owner_id where (? = true or t.status = '正常') and (lower(t.name) like ? or lower(t.tags) like ? or lower(u.nickname) like ?) order by t.active_now desc, t.members_count desc";
+        String sql = "select t.* from teams t left join users owner on owner.id = t.owner_id "
+                + "where (? = true or t.status = '正常') "
+                + "and (lower(t.name) like ? or lower(t.tags) like ? or lower(owner.nickname) like ?) "
+                + "order by t.active_now desc, t.members_count desc";
         List<TeamDto> teams = jdbc.query(sql, mapper(), includeStopped, normalized, normalized, normalized);
         if (userId != null) populateMyRoles(teams, userId);
         return teams;

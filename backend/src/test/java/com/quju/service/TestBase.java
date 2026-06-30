@@ -231,6 +231,20 @@ public abstract class TestBase {
                 + "mine boolean default false, read_flag boolean default false, recalled boolean default false,"
                 + "recalled_at timestamp, forwarded_from_id varchar(64))");
 
+        jdbc.execute("create table activity_summaries ("
+                + "id varchar(64) primary key, activity_id varchar(64), author_id varchar(64),"
+                + "title varchar(180), content varchar(4000), status varchar(32) default '已发布',"
+                + "created_at timestamp default current_timestamp, updated_at timestamp default current_timestamp)");
+
+        jdbc.execute("create table summary_images ("
+                + "id varchar(64) primary key, summary_id varchar(64), file_id varchar(64), url varchar(700),"
+                + "ai_category varchar(80), confirmed_category varchar(80), rank_order int)");
+
+        jdbc.execute("create table activity_reviews_user ("
+                + "id varchar(64) primary key, activity_id varchar(64), user_id varchar(64), rating int,"
+                + "content varchar(1000), created_at timestamp default current_timestamp,"
+                + "unique(activity_id,user_id))");
+
         jdbc.execute("create table follows ("
                 + "follower_id varchar(64), followee_id varchar(64), created_at timestamp default current_timestamp,"
                 + "primary key(follower_id, followee_id))");
