@@ -10,22 +10,51 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class MessageService {
+    private static final List<String> MESSAGE_TYPES = Arrays.asList("TEXT", "IMAGE", "FILE", "LOCATION");
     private final JdbcTemplate jdbc;
 
     public MessageService(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
+    @Transactional
     public List<MessageDtos.ConversationDto> conversations(String userId) {
-        List<MessageDtos.ConversationDto> rows = jdbc.query("select c.* from conversations c join conversation_participants p on p.conversation_id = c.id where p.user_id = ? order by p.pinned desc, c.unread desc, c.id asc", conversationMapper(), userId);
+        List<MessageDtos.ConversationDto> rows = findConversations(userId);
+        if (rows.isEmpty()) {
+            ensureWelcomeConversation(userId);
+            rows = findConversations(userId);
+        }
         for (MessageDtos.ConversationDto conversation : rows) {
             conversation.setMessages(messages(conversation.getId(), userId));
         }
         return rows;
+    }
+
+    private List<MessageDtos.ConversationDto> findConversations(String userId) {
+        return jdbc.query("select c.* from conversations c join conversation_participants p on p.conversation_id = c.id where p.user_id = ? order by p.pinned desc, c.unread desc, c.id asc", conversationMapper(), userId);
+    }
+
+    private void ensureWelcomeConversation(String userId) {
+        List<Map<String, Object>> assistants = jdbc.queryForList(
+                "select id,nickname,avatar from users where role = '管理员' and id <> ? and status = '正常' order by id limit 1", userId);
+        if (assistants.isEmpty()) return;
+        Map<String, Object> assistant = assistants.get(0);
+        String assistantId = String.valueOf(assistant.get("id"));
+        String conversationId = "welcome-" + userId;
+        String messageId = "welcome-message-" + userId;
+        String greeting = "欢迎来到趣聚！你可以在这里试试发送文字、表情、图片、文件和位置。";
+        jdbc.update("insert ignore into conversations (id,name,avatar,type,friend_user_id,unread,last_message,last_time,online) values (?,?,?,?,?,?,?,?,?)",
+                conversationId, "趣聚小助手", assistant.get("avatar"), "好友", assistantId, 0, greeting, "刚刚", true);
+        jdbc.update("insert ignore into conversation_participants (conversation_id,user_id) values (?,?),(?,?)",
+                conversationId, userId, conversationId, assistantId);
+        jdbc.update("insert ignore into messages (id,conversation_id,sender_id,content,message_type,mine,read_flag) values (?,?,?,?,?,?,?)",
+                messageId, conversationId, assistantId, greeting, "TEXT", false, true);
     }
 
     public List<MessageDtos.MessageDto> messages(String conversationId, String userId) {
@@ -36,10 +65,13 @@ public class MessageService {
     @Transactional
     public MessageDtos.MessageDto send(String conversationId, String senderId, MessageDtos.SendMessageRequest request) {
         requireParticipant(conversationId, senderId);
+        if (request == null) throw new IllegalStateException("消息内容不能为空");
         String type = DbSupport.safe(request.getType(), "TEXT");
         String content = DbSupport.safe(request.getContent(), "");
+        if (!MESSAGE_TYPES.contains(type)) throw new IllegalStateException("不支持的消息类型");
         if ("TEXT".equals(type) && content.trim().isEmpty()) throw new IllegalStateException("消息内容不能为空");
         if (("IMAGE".equals(type) || "FILE".equals(type)) && (request.getMediaUrl() == null || request.getMediaUrl().trim().isEmpty())) throw new IllegalStateException("请先上传文件");
+        if ("LOCATION".equals(type)) validateLocation(request.getLatitude(), request.getLongitude());
         String id = DbSupport.id("m");
         jdbc.update("insert into messages (id,conversation_id,sender_id,content,message_type,media_url,location_lat,location_lng,mine,read_flag) values (?,?,?,?,?,?,?,?,?,?)",
                 id, conversationId, senderId, content.trim(), type, request.getMediaUrl(), request.getLatitude(), request.getLongitude(), true, false);
@@ -124,6 +156,13 @@ public class MessageService {
     private void requireParticipant(String conversationId, String userId) {
         Integer count = jdbc.queryForObject("select count(*) from conversation_participants where conversation_id = ? and user_id = ?", Integer.class, conversationId, userId);
         if (count == null || count == 0) throw new IllegalStateException("非好友且非同队关系不可发送消息");
+    }
+
+    private void validateLocation(Double latitude, Double longitude) {
+        if (latitude == null || longitude == null) throw new IllegalStateException("位置坐标不完整");
+        if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+            throw new IllegalStateException("位置坐标无效");
+        }
     }
 
     private String displayContent(String type, String content) {
