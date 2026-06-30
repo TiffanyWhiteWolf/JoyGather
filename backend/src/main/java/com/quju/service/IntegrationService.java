@@ -178,9 +178,23 @@ public class IntegrationService {
     }
 
     private ModerationResult ruleModeration(String text, int capacity, String fallbackReason) {
-        boolean risky = capacity > 50 || text.contains("危险") || text.contains("酒吧") || text.contains("凌晨") || text.contains("水上") || text.contains("夜间");
+        boolean capacityRisky = capacity > 50;
+        boolean keywordRisky = text.contains("危险") || text.contains("酒吧") || text.contains("凌晨") || text.contains("水上") || text.contains("夜间");
+        boolean risky = capacityRisky || keywordRisky;
+
+        String reason;
+        if (!risky) {
+            reason = "规则审核低风险";
+        } else if (capacityRisky && keywordRisky) {
+            reason = "报名人数超过 50 人且内容包含风险词，转入人工审核";
+        } else if (capacityRisky) {
+            reason = "报名人数超过 50 人，转入人工审核";
+        } else {
+            reason = "活动内容包含风险词，转入人工审核";
+        }
+
         return new ModerationResult(risky ? "REVIEW_REQUIRED" : "LOW_RISK", risky ? "中" : "低",
-                risky ? fallbackReason : "规则审核低风险", risky ? Arrays.asList("RULE_REVIEW") : Collections.<String>emptyList());
+                reason, risky ? Arrays.asList("RULE_REVIEW") : Collections.<String>emptyList());
     }
 
     private PlannerResponse localPlan(PlannerRequest request) {

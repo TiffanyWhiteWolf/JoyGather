@@ -3,12 +3,31 @@
 # Local dependency/cache directories
 .m2/
 .npm/
+node_modules/
 frontend/node_modules/
 
 # Local runtime/config
 .build/
+.env
+.env.*
+!.env.example
 backend/src/main/resources/application-local.yml
 
 # Build outputs
+target/
 backend/target/
+dist/
 frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+*.tsbuildinfo
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# IDE/editor metadata
+.idea/
+.vscode/
+

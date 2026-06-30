@@ -9,6 +9,7 @@ public class ReviewTaskDto {
     private String reason;
     private String submittedAt;
     private String status;
+    private String targetId;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -26,4 +27,6 @@ public class ReviewTaskDto {
     public void setSubmittedAt(String submittedAt) { this.submittedAt = submittedAt; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getTargetId() { return targetId; }
+    public void setTargetId(String targetId) { this.targetId = targetId; }
 }

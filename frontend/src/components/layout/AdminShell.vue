@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { Bell, ChevronLeft, ClipboardCheck, LayoutDashboard, LogOut, Search, ShieldCheck, Users } from 'lucide-vue-next'
+import { Bell, ClipboardCheck, LayoutDashboard, LogOut, Search, ShieldCheck, Users } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { logout as apiLogout } from '@/lib/api'
@@ -39,7 +39,6 @@ async function logout() {
         <RouterLink v-for="item in nav" :key="item.to" :to="item.to" :class="{ active: route.path === item.to }"><component :is="item.icon" :size="19" />{{ item.label }}<span v-if="item.to === '/admin/reviews'" class="nav-count">12</span></RouterLink>
       </nav>
       <div class="admin-profile"><img src="https://i.pravatar.cc/80?img=11" alt="管理员" /><div><b>周晴</b><small>超级管理员</small></div></div>
-      <RouterLink to="/" class="back-site"><ChevronLeft :size="16" />返回用户端</RouterLink>
       <button class="back-site admin-logout" @click="logout"><LogOut :size="16" />退出登录</button>
     </aside>
     <section class="admin-main">

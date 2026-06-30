@@ -13,6 +13,7 @@ const router = createRouter({
         { path: 'discover', name: 'discover', component: () => import('@/views/user/DiscoverView.vue') },
         { path: 'activities/:id', name: 'activity-detail', component: () => import('@/views/user/ActivityDetailView.vue') },
         { path: 'create', name: 'create', component: () => import('@/views/user/CreateActivityView.vue') },
+        { path: 'drafts', name: 'drafts', component: () => import('@/views/user/DraftsView.vue') },
         { path: 'ai-planner', name: 'ai-planner', component: () => import('@/views/user/AiPlannerView.vue') },
         { path: 'check-in', name: 'check-in', component: () => import('@/views/user/CheckInView.vue') },
         { path: 'teams', name: 'teams', component: () => import('@/views/user/TeamsView.vue') },
@@ -24,6 +25,7 @@ const router = createRouter({
       path: '/admin', component: AdminShell, children: [
         { path: '', name: 'admin-dashboard', component: () => import('@/views/admin/DashboardView.vue') },
         { path: 'reviews', name: 'admin-reviews', component: () => import('@/views/admin/ReviewsView.vue') },
+        { path: 'activities/:id', name: 'admin-activity-detail', component: () => import('@/views/admin/ActivityDetailView.vue') },
         { path: 'users', name: 'admin-users', component: () => import('@/views/admin/UsersView.vue') },
         { path: 'content', name: 'admin-content', component: () => import('@/views/admin/ContentView.vue') },
       ],
@@ -33,17 +35,36 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const protectedPaths = ['/create', '/messages', '/profile', '/check-in']
-  if (protectedPaths.some(path => to.path.startsWith(path)) && !localStorage.getItem('quju:token')) {
+  const token = localStorage.getItem('quju:token')
+  let session: { role?: string } | null = null
+
+  try {
+    session = JSON.parse(
+      localStorage.getItem('quju:session') || 'null',
+    ) as { role?: string } | null
+  } catch {
+    /* ignore */
+  }
+
+  // Protected user paths require login
+  const protectedPaths = ['/create', '/drafts', '/messages', '/profile', '/check-in']
+  if (protectedPaths.some(path => to.path.startsWith(path)) && !token) {
     return { path: '/auth', query: { redirect: to.fullPath } }
   }
-  if (!to.path.startsWith('/admin')) return true
-  try {
-    const session = JSON.parse(localStorage.getItem('quju:session') || 'null') as { role?: string } | null
-    const token = localStorage.getItem('quju:token')
+
+
+  // Admin paths require admin role
+  if (to.path.startsWith('/admin')) {
     if (token && session?.role === '管理员') return true
-  } catch { /* redirect below */ }
-  return { path: '/auth', query: { role: 'admin', redirect: to.fullPath } }
+    return { path: '/auth', query: { role: 'admin', redirect: to.fullPath } }
+  }
+
+  // User-facing pages: admin accounts should not access
+  if (to.path !== '/auth' && token && session?.role === '管理员') {
+    return { path: '/admin' }
+  }
+
+  return true
 })
 
 export default router

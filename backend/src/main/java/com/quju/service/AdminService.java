@@ -80,6 +80,11 @@ public class AdminService {
         return activityService.findAllForAdmin(query, status);
     }
 
+    public ActivityDto activityDetail(String id) {
+        return activityService.findById(id)
+                .orElseThrow(() -> new java.util.NoSuchElementException("活动不存在"));
+    }
+
     public void ban(String userId, String reason, String until, String actorId) {
         userService.ban(userId, reason, until, actorId);
     }
@@ -105,6 +110,7 @@ public class AdminService {
                 task.setReason(rs.getString("reason"));
                 task.setSubmittedAt(DbSupport.formatTime(rs.getTimestamp("submitted_at")));
                 task.setStatus(rs.getString("status"));
+                task.setTargetId(rs.getString("target_id"));
                 return task;
             }
         };

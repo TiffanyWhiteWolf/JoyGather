@@ -93,12 +93,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.location-picker{overflow:hidden;border:1px solid var(--color-line);border-radius:13px;background:#fff}
+.location-picker{position:relative;z-index:0;isolation:isolate;overflow:hidden;border:1px solid var(--color-line);border-radius:13px;background:#fff}
 .picker-tools{padding:10px;display:flex;gap:8px;border-bottom:1px solid var(--color-line)}
 .picker-tools label{min-width:0;flex:1;padding:0 10px;border:1px solid var(--color-line);border-radius:9px;display:flex;align-items:center;gap:6px}
 .picker-tools input{min-width:0;flex:1;padding:9px 0;border:0;outline:0}
 .picker-tools button{border:0;border-radius:8px;background:var(--color-bg);padding:0 10px;font-size:10px;font-weight:800;display:flex;align-items:center;gap:5px}
-.picker-map{height:280px}
+.picker-map{position:relative;z-index:0;height:280px}
 .location-picker p{margin:0;padding:9px 12px;color:var(--color-danger);font-size:10px}
 :global(.pick-marker){width:30px!important;height:30px!important;border:3px solid #fff;background:var(--color-primary);border-radius:50% 50% 50% 8px;box-shadow:0 8px 18px rgba(23,34,56,.24);transform:rotate(-45deg)}
 :global(.pick-marker span){display:block;width:8px;height:8px;margin:8px;background:#fff;border-radius:50%}

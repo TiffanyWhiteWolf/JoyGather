@@ -116,6 +116,13 @@ public class AdminController {
         return ApiResponse.success(adminService.activities(query, status));
     }
 
+    @GetMapping("/activities/{id}")
+    public ApiResponse<ActivityDto> activityDetail(@PathVariable String id,
+                                                   @RequestHeader(value = "Authorization", required = false) String authorization) {
+        userService.requireAdmin(authorization);
+        return ApiResponse.success(adminService.activityDetail(id));
+    }
+
     @PostMapping("/activities/{id}/offline")
     public ApiResponse<Void> offlineActivity(@PathVariable String id, @RequestBody AdminDtos.ReasonRequest request,
                                              @RequestHeader(value = "Authorization", required = false) String authorization) {

@@ -98,9 +98,12 @@ public class UserService {
             throw new IllegalStateException("邮箱或密码错误");
         }
         if (!passwordMatches(request.getPassword(), record.passwordHash)) throw new IllegalStateException("邮箱或密码错误");
+        if (request.isAdminLogin() && !"管理员".equals(record.user.getRole())) throw new IllegalStateException("非管理员账号，无法使用管理员后台登录");
+        if (!request.isAdminLogin() && "管理员".equals(record.user.getRole())) throw new IllegalStateException("管理员账号无法在用户登录页面登录");
         if (!record.activated) throw new IllegalStateException("请先激活账号");
         if ("已封禁".equals(record.status) && !banExpired(record.banUntil)) {
-            throw new IllegalStateException("账号已被封禁：" + DbSupport.safe(record.banReason, "未填写原因"));
+            String untilStr = record.banUntil == null ? "" : "，解封日期：" + record.banUntil.toString();
+            throw new IllegalStateException("账号已被封禁：" + DbSupport.safe(record.banReason, "未填写原因") + untilStr);
         }
         if ("已封禁".equals(record.status) && banExpired(record.banUntil)) {
             jdbc.update("update users set status = '正常', ban_reason = null, ban_until = null where id = ?", record.user.getId());
@@ -137,8 +140,12 @@ public class UserService {
         if (authorization == null || !authorization.startsWith("Bearer ")) throw new IllegalStateException("请先登录");
         String token = authorization.substring("Bearer ".length()).trim();
         try {
-            return jdbc.queryForObject("select u.* from users u join sessions s on s.user_id = u.id where s.token = ? and s.expires_at > now()",
+            UserDto user = jdbc.queryForObject("select u.* from users u join sessions s on s.user_id = u.id where s.token = ? and s.expires_at > now()",
                     userMapper(), token);
+            if ("已封禁".equals(user.getStatus()) && !banExpired(user.getBanUntil())) {
+                throw new IllegalStateException(banMessage(user.getBanReason(), user.getBanUntil()));
+            }
+            return user;
         } catch (EmptyResultDataAccessException ex) {
             throw new IllegalStateException("登录已过期，请重新登录");
         }
@@ -207,8 +214,12 @@ public class UserService {
         if (reason == null || reason.trim().isEmpty() || until == null || until.trim().isEmpty()) {
             throw new IllegalStateException("封禁原因和封禁期限均为必填项");
         }
+        Date banUntil = Date.valueOf(until);
+        if (!banUntil.toLocalDate().isAfter(LocalDate.now())) {
+            throw new IllegalStateException("封禁截止日期必须在今天之后");
+        }
         jdbc.update("update users set status = '已封禁', ban_reason = ?, ban_until = ? where id = ?",
-                reason.trim(), Date.valueOf(until), userId);
+                reason.trim(), banUntil, userId);
         log(actorId, "BAN_USER", "USER", userId, reason);
     }
 
@@ -306,6 +317,19 @@ public class UserService {
 
     private boolean banExpired(Date banUntil) {
         return banUntil != null && banUntil.toLocalDate().isBefore(LocalDate.now());
+    }
+
+    private boolean banExpired(String banUntil) {
+        return banUntil != null && Date.valueOf(banUntil).toLocalDate().isBefore(LocalDate.now());
+    }
+
+    private String banMessage(String reason, Date banUntil) {
+        String until = banUntil == null ? "未设置期限" : banUntil.toString();
+        return "账号已被封禁：" + DbSupport.safe(reason, "未填写原因") + "；封禁至：" + until;
+    }
+
+    private String banMessage(String reason, String banUntil) {
+        return "账号已被封禁：" + DbSupport.safe(reason, "未填写原因") + "；封禁至：" + DbSupport.safe(banUntil, "未设置期限");
     }
 
     private String emptyFilter(String value) {
