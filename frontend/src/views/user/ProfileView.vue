@@ -56,8 +56,10 @@ const editing = ref(false)
 const activeTab = ref<ProfileTab>('我的活动')
 const saving = ref(false)
 const uploadingAvatar = ref(false)
+const uploadingLicense = ref(false)
 const error = ref('')
 const avatarInput = ref<HTMLInputElement | null>(null)
+const licenseInput = ref<HTMLInputElement | null>(null)
 const merchantApplications = ref<MerchantApplication[]>([])
 const merchantSaving = ref(false)
 const merchantSubmitting = ref(false)
@@ -88,6 +90,10 @@ const birthdayDisplay = computed(() => {
   return `${year}年${month}月${day}日`
 })
 const latestMerchantApplication = computed(() => merchantApplications.value[0] ?? null)
+const licenseIsImage = computed(() => {
+  const name = merchantForm.licenseName || merchantForm.licenseUrl || ''
+  return /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(name)
+})
 const customInterestTags = computed(() => parseInterestTags().filter(tag => !suggestedInterests.includes(tag)))
 const checkedInCount = computed(() => checkinRows.value.filter(item => item.status === '已签到').length)
 const registeredCount = computed(() => checkinRows.value.filter(item => item.status === '已报名' || item.status === '已签到').length)
@@ -121,8 +127,8 @@ onMounted(async () => {
       merchantName: user.merchantName || latestApplication?.merchantName || '',
       merchantNickname: user.merchantNickname || user.merchantName || '',
       merchantFields: (user.merchantFields || []).join('、'),
-      licenseName: '',
-      licenseUrl: '',
+      licenseName: latestApplication?.licenseName || '',
+      licenseUrl: latestApplication?.licenseUrl || '',
     })
     activities.value = rows
   } catch {
@@ -317,6 +323,26 @@ async function uploadAvatar(event: Event) {
   }
 }
 
+async function uploadLicenseFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  merchantError.value = ''
+  uploadingLicense.value = true
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const uploaded = await apiUpload<FileResponse>('/files/upload', form)
+    merchantForm.licenseName = uploaded.originalName
+    merchantForm.licenseUrl = uploaded.url
+  } catch (err) {
+    merchantError.value = err instanceof Error ? err.message : '营业凭证上传失败'
+  } finally {
+    uploadingLicense.value = false
+    input.value = ''
+  }
+}
+
 function changeCover() {
   error.value = ''
   window.alert('封面图上传暂未开放，请通过头像上传更新个人展示图片。')
@@ -364,6 +390,7 @@ async function cancelAccount() {
 <template>
   <div v-if="currentUser" class="container profile-page">
     <input ref="avatarInput" class="hidden-file" type="file" accept="image/*" @change="uploadAvatar" />
+    <input ref="licenseInput" class="hidden-file" type="file" accept="image/*,.pdf" @change="uploadLicenseFile" />
 
     <section class="profile-cover">
       <div class="profile-pattern"></div>
@@ -457,7 +484,6 @@ async function cancelAccount() {
               <div>
                 <span class="eyebrow">MERCHANT</span>
                 <h2>商家认证与资料管理</h2>
-                <p>商家资料与个人资料分开维护；提交认证后由管理员在审核中心处理。</p>
               </div>
               <i>{{ merchantStatusText }}</i>
             </div>
@@ -479,7 +505,17 @@ async function cancelAccount() {
               </div>
               <div class="merchant-form-card">
                 <h3>认证申请</h3>
-                <label>营业凭证文件<input class="input" type="file" accept="image/*,.pdf" @change="merchantForm.licenseName=($event.target as HTMLInputElement).files?.[0]?.name||''" /></label>
+                <label>营业凭证文件
+                  <div class="license-upload-row">
+                    <button type="button" class="btn btn-outline btn-sm" :disabled="uploadingLicense" @click="licenseInput?.click()">
+                      <FileCheck :size="15" />{{ uploadingLicense ? '上传中...' : (merchantForm.licenseName || '选择文件并上传') }}
+                    </button>
+                  </div>
+                  <div v-if="merchantForm.licenseUrl" class="license-preview">
+                    <img v-if="licenseIsImage" :src="merchantForm.licenseUrl" alt="营业执照预览" />
+                    <div v-else class="license-file-icon"><FileText :size="28" /><span>{{ merchantForm.licenseName }}</span></div>
+                  </div>
+                </label>
                 <label>凭证 URL<input v-model.trim="merchantForm.licenseUrl" class="input" placeholder="也可粘贴营业执照或授权书链接" /></label>
                 <p v-if="latestMerchantApplication" class="merchant-status">最近申请：{{ latestMerchantApplication.status }}<span v-if="latestMerchantApplication.reason"> · {{ latestMerchantApplication.reason }}</span></p>
                 <p v-else class="merchant-status">尚未提交商家认证申请。</p>
@@ -656,6 +692,13 @@ async function cancelAccount() {
 .merchant-form-card{padding:16px;border:1px solid var(--color-line);border-radius:12px;background:var(--color-bg)}
 .merchant-form-card h3{margin:0 0 14px}
 .merchant-form-card label{display:flex;flex-direction:column;gap:6px;margin-top:11px;font-size:11px;font-weight:800}
+.license-upload-row{display:flex;align-items:center;gap:10px}
+.license-upload-row .btn{white-space:nowrap}
+.license-preview{margin-top:10px;padding:10px;border:1px solid var(--color-line);border-radius:8px;background:#fff}
+.license-preview img{max-width:100%;max-height:200px;border-radius:6px;object-fit:contain;display:block}
+.license-file-icon{display:flex;align-items:center;gap:10px;padding:12px;background:var(--color-bg);border-radius:6px}
+.license-file-icon svg{color:var(--color-primary);flex-shrink:0}
+.license-file-icon span{font-size:12px;color:var(--color-ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .merchant-form-card .btn{width:100%;margin-top:14px;justify-content:center}
 .merchant-status{min-height:36px;margin:12px 0 0!important;color:var(--color-ink-soft);font-size:11px!important}
 .merchant-presets{margin-bottom:2px}

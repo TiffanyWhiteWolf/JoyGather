@@ -103,7 +103,7 @@ public class ActivityService {
         List<String> categoryList = categories == null || categories.trim().isEmpty() ? Collections.<String>emptyList() : DbSupport.split(categories);
         for (ActivityDto item : result) {
             if (!categoryList.isEmpty() && !categoryList.contains(item.getCategory())) continue;
-            if (city != null && !city.trim().isEmpty() && !city.trim().replace("市", "").equals(item.getCity())) continue;
+            if (city != null && !city.trim().isEmpty() && item.getCity() != null && !city.trim().replace("市", "").equals(item.getCity())) continue;
             if ("免费".equals(fee) && item.getPrice().compareTo(BigDecimal.ZERO) > 0) continue;
             if ("付费".equals(fee) && item.getPrice().compareTo(BigDecimal.ZERO) <= 0) continue;
             if (distance != null && item.getDistance() != null && item.getDistance().compareTo(distance) > 0) continue;

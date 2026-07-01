@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/conversations")
@@ -92,5 +93,14 @@ public class MessageController {
         String userId = userService.requireToken(authorization).getId();
         messageService.markConversationRead(id, userId);
         return ApiResponse.success(null);
+    }
+
+    @PostMapping("/by-user")
+    public ApiResponse<Map<String, String>> findOrCreate(
+            @RequestBody Map<String, String> request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        String targetUserId = request.get("userId");
+        return ApiResponse.success(messageService.findOrCreateConversation(userId, targetUserId));
     }
 }
