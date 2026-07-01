@@ -141,6 +141,14 @@ public class ActivityService {
         return jdbc.query("select * from activities where organizer_id = ? and status <> '草稿' order by updated_at desc", activityMapper(), userId);
     }
 
+    public List<ActivityDto> findJoinedActivities(String userId) {
+        return jdbc.query(
+            "select a.* from activities a inner join registrations r on r.activity_id = a.id " +
+            "where r.user_id = ? and r.status in ('已报名','候补中','已签到') and a.status <> '草稿' " +
+            "order by r.created_at desc",
+            activityMapper(), userId);
+    }
+
     public Map<String, String> myRegistrationStatus(String userId) {
         Map<String, String> result = new java.util.LinkedHashMap<String, String>();
         List<Map<String, Object>> rows = jdbc.queryForList("select activity_id,status from registrations where user_id = ? and status in ('已报名','候补中','已签到')", userId);
@@ -939,6 +947,7 @@ public class ActivityService {
         if (startAt == null || endAt == null || deadline == null) throw new IllegalStateException("活动开始、结束和报名截止时间不能为空");
         if (!endAt.isAfter(startAt)) throw new IllegalStateException("活动结束时间需要晚于开始时间");
         if (!startAt.isAfter(LocalDateTime.now())) throw new IllegalStateException("活动开始时间需要晚于当前时间");
+        if (!deadline.isAfter(LocalDateTime.now())) throw new IllegalStateException("报名截止时间需要晚于当前时间");
         if (deadline.isAfter(startAt)) throw new IllegalStateException("报名截止时间不能晚于活动开始时间");
     }
 
@@ -967,6 +976,7 @@ public class ActivityService {
         LocalDateTime deadline = LocalDateTime.parse(draft.getDeadline());
         if (!endAt.isAfter(startAt)) throw new IllegalStateException("活动结束时间需要晚于开始时间");
         if (!startAt.isAfter(LocalDateTime.now())) throw new IllegalStateException("活动开始时间需要晚于当前时间");
+        if (!deadline.isAfter(LocalDateTime.now())) throw new IllegalStateException("报名截止时间需要晚于当前时间");
         if (deadline.isAfter(startAt)) throw new IllegalStateException("报名截止时间不能晚于活动开始时间");
     }
 

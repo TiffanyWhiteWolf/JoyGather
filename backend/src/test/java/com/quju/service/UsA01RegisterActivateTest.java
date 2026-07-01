@@ -22,7 +22,7 @@ class UsA01RegisterActivateTest extends TestBase {
     @DisplayName("US-A01-1: 提交注册后创建未激活账号")
     void shouldCreateInactiveAccountAndSendActivationLink() {
         AuthDtos.RegisterRequest req = registerRequest("newuser@test.com", USER_PASS, USER_PASS, "新用户");
-        AuthDtos.ActivationResponse resp = userService.register(req);
+        AuthDtos.ActivationResponse resp = userService.register(req, "http://localhost");
         assertNotNull(resp.getUserId());
         assertEquals("未激活", resp.getStatus());
         String token = jdbc.queryForObject("select activation_token from users where id = ?", String.class, resp.getUserId());
@@ -33,7 +33,7 @@ class UsA01RegisterActivateTest extends TestBase {
     @DisplayName("US-A01-2: 有效激活链接激活账号后可正常登录")
     void shouldActivateAccountAndAllowLogin() {
         AuthDtos.RegisterRequest req = registerRequest("activate@test.com", USER_PASS, USER_PASS, "可激活用户");
-        AuthDtos.ActivationResponse resp = userService.register(req);
+        AuthDtos.ActivationResponse resp = userService.register(req, "http://localhost");
 
         String token = jdbc.queryForObject("select activation_token from users where id = ?", String.class, resp.getUserId());
         UserDto activated = userService.activate(token);
@@ -49,30 +49,30 @@ class UsA01RegisterActivateTest extends TestBase {
     void shouldRejectInvalidInput() {
         // 邮箱格式不合法
         assertThrows(IllegalStateException.class,
-                () -> userService.register(registerRequest("bad-email", USER_PASS, USER_PASS, "昵称A")));
+                () -> userService.register(registerRequest("bad-email", USER_PASS, USER_PASS, "昵称A"), "http://localhost"));
 
         // 密码长度不足
         assertThrows(IllegalStateException.class,
-                () -> userService.register(registerRequest("a@b.com", "123", "123", "昵称B")));
+                () -> userService.register(registerRequest("a@b.com", "123", "123", "昵称B"), "http://localhost"));
 
         // 两次密码不一致
         assertThrows(IllegalStateException.class,
-                () -> userService.register(registerRequest("a@b.com", USER_PASS, "different", "昵称C")));
+                () -> userService.register(registerRequest("a@b.com", USER_PASS, "different", "昵称C"), "http://localhost"));
     }
 
     @Test
     @DisplayName("US-A01-4: 同一邮箱不可重复注册")
     void shouldRejectDuplicateEmail() {
-        userService.register(registerRequest("dup@test.com", USER_PASS, USER_PASS, "首次注册"));
+        userService.register(registerRequest("dup@test.com", USER_PASS, USER_PASS, "首次注册"), "http://localhost");
 
         assertThrows(IllegalStateException.class,
-                () -> userService.register(registerRequest("dup@test.com", USER_PASS, USER_PASS, "重复注册")));
+                () -> userService.register(registerRequest("dup@test.com", USER_PASS, USER_PASS, "重复注册"), "http://localhost"));
     }
 
     @Test
     @DisplayName("US-A01-5: 未激活账号不能登录")
     void shouldDenyLoginForInactiveAccount() {
-        userService.register(registerRequest("inactive@test.com", USER_PASS, USER_PASS, "未激活"));
+        userService.register(registerRequest("inactive@test.com", USER_PASS, USER_PASS, "未激活"), "http://localhost");
 
         Exception ex = assertThrows(IllegalStateException.class,
                 () -> userService.login(loginRequest("inactive@test.com", USER_PASS)));

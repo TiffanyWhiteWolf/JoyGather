@@ -118,7 +118,7 @@ public class UserService {
     }
 
     @Transactional
-    public AuthDtos.ActivationResponse register(AuthDtos.RegisterRequest request) {
+    public AuthDtos.ActivationResponse register(AuthDtos.RegisterRequest request, String origin) {
         validateRegistration(request);
         String id = DbSupport.id("u");
         String activationToken = UUID.randomUUID().toString().replace("-", "");
@@ -135,7 +135,7 @@ public class UserService {
                     DbSupport.id("rv"), "商家认证", applicationId, DbSupport.safe(request.getMerchantName(), request.getNickname()),
                     request.getNickname(), "低", "营业执照与门店认证", "待审核");
         }
-        if (integrationService != null) integrationService.sendActivationEmail(request.getEmail().trim().toLowerCase(), activationToken);
+        if (integrationService != null) integrationService.sendActivationEmail(request.getEmail().trim().toLowerCase(), activationToken, origin);
         return new AuthDtos.ActivationResponse(id, "未激活");
     }
 
@@ -418,7 +418,7 @@ public class UserService {
 
     private void validateRegistration(AuthDtos.RegisterRequest request) {
         if (request.getEmail() == null || !request.getEmail().matches("^\\S+@\\S+\\.\\S+$")) throw new IllegalStateException("请输入有效的邮箱地址");
-        if (request.getPassword() == null || request.getPassword().length() < 8) throw new IllegalStateException("密码至少需要 8 位");
+        if (request.getPassword() == null || request.getPassword().length() < 8) throw new IllegalStateException("邮箱或密码错误");
         if (request.getConfirmPassword() != null && !request.getPassword().equals(request.getConfirmPassword())) throw new IllegalStateException("两次密码不一致");
         if (request.getNickname() == null || request.getNickname().trim().isEmpty()) throw new IllegalStateException("请输入昵称");
         Integer count = jdbc.queryForObject("select count(*) from users where email = ? or nickname = ?", Integer.class,

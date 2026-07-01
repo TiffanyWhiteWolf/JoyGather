@@ -95,6 +95,8 @@ type FieldErrorKey =
   | 'endTime'
   | 'location'
   | 'capacity'
+  | 'price'
+  | 'minAge'
   | 'safetyNote'
 
 const fieldErrors = reactive<Record<FieldErrorKey, string>>({
@@ -107,6 +109,8 @@ const fieldErrors = reactive<Record<FieldErrorKey, string>>({
   endTime: '',
   location: '',
   capacity: '',
+  price: '',
+  minAge: '',
   safetyNote: '',
 })
 
@@ -114,6 +118,27 @@ function clearFieldErrors() {
   (Object.keys(fieldErrors) as FieldErrorKey[]).forEach((key) => {
     fieldErrors[key] = ''
   })
+}
+
+function validatePricingAndAge() {
+  fieldErrors.price = ''
+  fieldErrors.minAge = ''
+
+  if (form.price === null || form.price === undefined || Number.isNaN(Number(form.price))) {
+    fieldErrors.price = '请输入活动费用。'
+  } else if (Number(form.price) < 0) {
+    fieldErrors.price = '活动费用不能为负数。'
+  } else if (!/^\d+(\.\d{1,2})?$/.test(String(form.price).trim())) {
+    fieldErrors.price = '活动费用最多保留两位小数。'
+  }
+
+  if (form.minAge === null || form.minAge === undefined || String(form.minAge).trim() === '') {
+    fieldErrors.minAge = '请输入最低年龄。'
+  } else if (!Number.isInteger(Number(form.minAge))) {
+    fieldErrors.minAge = '最低年龄必须是整数。'
+  } else if (Number(form.minAge) < 0) {
+    fieldErrors.minAge = '最低年龄不能为负数。'
+  }
 }
 
 function useTemplate(index: number) {
@@ -213,14 +238,28 @@ function validateCurrentStep() {
     if (form.date && form.startTime && form.deadline && new Date(form.deadline).getTime() > new Date(`${form.date}T${form.startTime}:00`).getTime()) {
       fieldErrors.deadline = '报名截止时间不能晚于活动开始时间。'
     }
+    if (form.deadline && new Date(form.deadline).getTime() <= Date.now()) {
+      fieldErrors.deadline = '报名截止时间需要晚于当前时间。'
+    }
   }
 
   if (step.value === 3) {
     if (!Number.isInteger(form.capacity) || form.capacity < 2) {
       fieldErrors.capacity = '人数上限必须为大于等于 2 的整数。'
+    } else if (form.capacity > 500) {
+      fieldErrors.capacity = '人数上限不能超过 500 人。'
+    }
+    validatePricingAndAge()
+    if (!fieldErrors.price && Number(form.price) > 9999) {
+      fieldErrors.price = '活动费用不能超过 9999 元。'
+    }
+    if (!fieldErrors.minAge && Number(form.minAge) > 100) {
+      fieldErrors.minAge = '最低年龄不能超过 100 岁。'
     }
     if (!form.safetyNote.trim()) {
       fieldErrors.safetyNote = '请补充安全须知。'
+    } else if (form.safetyNote.length > 300) {
+      fieldErrors.safetyNote = '安全须知不能超过 300 字。'
     }
   }
 
@@ -441,10 +480,10 @@ onMounted(async () => {
         </template>
 
         <template v-else-if="step===3">
-          <div class="form-grid"><div class="input-group"><label>人数上限 *</label><input v-model.number="form.capacity" class="input" type="number" min="2" max="500" step="1" /><p v-if="fieldErrors.capacity" class="field-error">{{ fieldErrors.capacity }}</p></div><div class="input-group"><label>活动费用（元）</label><input v-model.number="form.price" class="input" type="number" min="0" /></div></div>
-          <div class="form-grid"><div class="input-group"><label>最低年龄</label><input v-model.number="form.minAge" class="input" type="number" min="0" max="100" /></div><div class="input-group"><label>审核方式</label><div class="review-mode"><ShieldCheck :size="18" /><span><b>{{ reviewMode }}</b><small>{{ form.capacity > 50 ? '超过 50 人按规则转人工' : '提交后进行内容安全检查' }}</small></span></div></div></div>
+          <div class="form-grid"><div class="input-group"><label>人数上限 *</label><input v-model.number="form.capacity" class="input" type="number" min="2" max="500" step="1" /><small>范围 2 - 500 人</small><p v-if="fieldErrors.capacity" class="field-error">{{ fieldErrors.capacity }}</p></div><div class="input-group"><label>活动费用（元）</label><input v-model.number="form.price" class="input" type="number" min="0" max="9999" step="0.01" @input="validatePricingAndAge" @blur="validatePricingAndAge" /><small>范围 0 - 9999 元，最多两位小数</small><p v-if="fieldErrors.price" class="field-error">{{ fieldErrors.price }}</p></div></div>
+          <div class="form-grid"><div class="input-group"><label>最低年龄</label><input v-model.number="form.minAge" class="input" type="number" min="0" max="100" step="1" @input="validatePricingAndAge" @blur="validatePricingAndAge" /><small>范围 0 - 100 岁，必须是整数</small><p v-if="fieldErrors.minAge" class="field-error">{{ fieldErrors.minAge }}</p></div><div class="input-group"><label>审核方式</label><div class="review-mode"><ShieldCheck :size="18" /><span><b>{{ reviewMode }}</b><small>{{ form.capacity > 50 ? '超过 50 人按规则转人工' : '提交后进行内容安全检查' }}</small></span></div></div></div>
           <div class="input-group"><label>报名信息</label><div class="field-checks"><button v-for="item in ['真实姓名','手机号码','紧急联系人','身份证号']" :key="item" :class="{active:form.joinFields.includes(item)}" @click="toggleField(item)"><Check :size="14" />{{ item }}</button></div></div>
-          <div class="input-group"><label>安全须知 *</label><textarea v-model.trim="form.safetyNote" class="textarea" placeholder="装备、天气、医疗、紧急联系人等必要说明"></textarea><p v-if="fieldErrors.safetyNote" class="field-error">{{ fieldErrors.safetyNote }}</p></div>
+          <div class="input-group"><label>安全须知 *</label><textarea v-model.trim="form.safetyNote" class="textarea" maxlength="300" placeholder="装备、天气、医疗、紧急联系人等必要说明"></textarea><small>{{ form.safetyNote.length }} / 300</small><p v-if="fieldErrors.safetyNote" class="field-error">{{ fieldErrors.safetyNote }}</p></div>
         </template>
 
         <template v-else>

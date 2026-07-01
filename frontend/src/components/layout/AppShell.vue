@@ -31,6 +31,8 @@ const nav = [
 const noticePreview = computed(() => app.notificationItems.slice(0, 8))
 
 async function loadCurrentUser() {
+  const token = localStorage.getItem('quju:token')
+  if (!token) return
   try {
     currentUser.value = await apiGet<User>('/auth/me')
     await app.refreshUserState()

@@ -52,7 +52,7 @@ public abstract class TestBase {
 
     protected String registerAndGetId(String email, String nickname) {
         AuthDtos.RegisterRequest req = registerRequest(email, USER_PASS, USER_PASS, nickname);
-        return userService.register(req).getUserId();
+        return userService.register(req, "http://localhost").getUserId();
     }
 
     protected AuthDtos.RegisterRequest registerRequest(String email, String password, String confirm, String nickname) {
