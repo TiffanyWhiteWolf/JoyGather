@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { apiGet, apiPost, apiPut } from '@/lib/api'
 import LocationPicker from '@/components/map/LocationPicker.vue'
 import type { Activity, ActivityCategory, ActivityDraft } from '@/types'
+import { getCityConfig, supportedCities, type SupportedCity } from '@/config/cities'
 
 const app = useAppStore()
 const route = useRoute()
@@ -17,10 +18,13 @@ const saving = ref(false)
 const submitting = ref(false)
 const persistedDraftId = ref('')
 const savedAt = ref('尚未保存')
-const longitude = ref(120.15507)
-const latitude = ref(30.274085)
+const initialCity = app.city
+const initialCityConfig = getCityConfig(initialCity)
+const longitude = ref(initialCityConfig.center[1])
+const latitude = ref(initialCityConfig.center[0])
 const categories: ActivityCategory[] = ['城市探索', '户外运动', '桌游聚会', '学习交流', '运动健身', '公益活动']
-const districtOptions = computed(() => Array.from(new Set(['拱墅区', '西湖区', '上城区', '滨江区', '余杭区', '萧山区', '钱塘区', '临平区', form.district].filter(Boolean))))
+const activeCityConfig = computed(() => getCityConfig(form.city))
+const districtOptions = computed(() => Array.from(new Set([...activeCityConfig.value.districts, form.district].filter(Boolean))))
 const templates = [
   { name: '城市探索', category: '城市探索' as ActivityCategory, title: '周末城市漫步', tags: 'Citywalk、摄影、新手友好', summary: '不赶路地认识城市，也认识同行的人。', safety: '请穿舒适的鞋，遵守交通规则并保持队伍联系。' },
   { name: '户外徒步', category: '户外运动' as ActivityCategory, title: '新手友好轻徒步', tags: '徒步、自然、零基础', summary: '低强度路线，途中安排休息与补给。', safety: '根据天气准备防晒或雨具，领队携带急救包。' },
@@ -32,7 +36,7 @@ const templates = [
 
 const form = reactive<ActivityDraft>({
   id: `draft-${Date.now()}`, title: '', category: '城市探索', tags: '', summary: '',
-  date: '', startTime: '', endTime: '', location: '', district: '拱墅区', capacity: 20,
+  date: '', startTime: '', endTime: '', location: '', city: initialCity, district: initialCityConfig.districts[0], capacity: 20,
   deadline: '', price: 0, minAge: 16, safetyNote: '', joinFields: ['真实姓名', '手机号码'], updatedAt: '',
 })
 const reviewMode = computed(() => form.capacity > 50 ? '人工审核' : 'AI 自动审核')
@@ -49,6 +53,7 @@ interface ActivityRequest {
   endTime: string
   deadline: string
   location: string
+  city: SupportedCity
   district: string
   capacity: number
   price: number
@@ -154,6 +159,7 @@ function toActivityRequest(): ActivityRequest {
     endTime: form.endTime,
     deadline: form.deadline,
     location: form.location,
+    city: form.city as SupportedCity,
     district: form.district,
     capacity: form.capacity,
     price: form.price,
@@ -227,19 +233,34 @@ function startNewActivity() {
   submitError.value = ''
   Object.assign(form, {
     id: `draft-${Date.now()}`, title: '', category: '城市探索', tags: '', summary: '',
-    date: '', startTime: '', endTime: '', location: '', district: '拱墅区', capacity: 20,
+    date: '', startTime: '', endTime: '', location: '', city: app.city, district: getCityConfig(app.city).districts[0], capacity: 20,
     deadline: '', price: 0, minAge: 16, safetyNote: '', joinFields: ['真实姓名', '手机号码'], updatedAt: '',
   })
-  longitude.value = 120.15507
-  latitude.value = 30.274085
+  longitude.value = getCityConfig(app.city).center[1]
+  latitude.value = getCityConfig(app.city).center[0]
 }
 
 function toggleField(field: string) {
   form.joinFields = form.joinFields.includes(field) ? form.joinFields.filter(item => item !== field) : [...form.joinFields, field]
 }
 
-function selectLocation(point: { location: string; district: string; longitude: number; latitude: number }) {
+function changeCity() {
+  const config = getCityConfig(form.city)
+  app.setCity(config.name)
+  form.city = config.name
+  form.district = config.districts[0]
+  form.location = ''
+  longitude.value = config.center[1]
+  latitude.value = config.center[0]
+}
+
+function useRecommendedLocation() {
+  selectLocation({ ...activeCityConfig.value.recommendedPlace, city: activeCityConfig.value.name })
+}
+
+function selectLocation(point: { location: string; city: SupportedCity; district: string; longitude: number; latitude: number }) {
   form.location = point.location
+  form.city = point.city
   form.district = point.district
   longitude.value = point.longitude
   latitude.value = point.latitude
@@ -264,6 +285,7 @@ onMounted(async () => {
         endTime: source.endAt?.slice(11, 16) || '',
         deadline: source.deadline?.slice(0, 16) || '',
         location: source.location,
+        city: (source.city || app.city) as SupportedCity,
         district: source.district,
         capacity: source.capacity,
         price: Number(source.price),
@@ -289,7 +311,7 @@ onMounted(async () => {
         startTime: source.startAt?.slice(11, 16) || '',
         endTime: source.endAt?.slice(11, 16) || '',
         deadline: source.deadline || '',
-        location: source.location, district: source.district, capacity: source.capacity, price: source.price,
+        location: source.location, city: (source.city || app.city) as SupportedCity, district: source.district, capacity: source.capacity, price: source.price,
         minAge: source.minAge || 16,
         safetyNote: source.safetyNote || '',
         joinFields: source.joinFields || ['真实姓名', '手机号码'],
@@ -323,9 +345,10 @@ onMounted(async () => {
         <template v-else-if="step===2">
           <div class="form-grid"><div class="input-group"><label>活动日期 *</label><input v-model="form.date" class="input" type="date" /><p v-if="fieldErrors.date" class="field-error">{{ fieldErrors.date }}</p></div><div class="input-group"><label>报名截止 *</label><input v-model="form.deadline" class="input" type="datetime-local" /><p v-if="fieldErrors.deadline" class="field-error">{{ fieldErrors.deadline }}</p></div></div>
           <div class="form-grid"><div class="input-group"><label>开始时间 *</label><input v-model="form.startTime" class="input" type="time" /><p v-if="fieldErrors.startTime" class="field-error">{{ fieldErrors.startTime }}</p></div><div class="input-group"><label>结束时间 *</label><input v-model="form.endTime" class="input" type="time" /><p v-if="fieldErrors.endTime" class="field-error">{{ fieldErrors.endTime }}</p></div></div>
-          <div class="form-grid"><div class="input-group"><label>城区 *</label><select v-model="form.district" class="select"><option v-for="item in districtOptions" :key="item">{{ item }}</option></select></div><div class="input-group"><label>集合地点 *</label><input v-model.trim="form.location" class="input" placeholder="输入可被准确找到的地点" /><p v-if="fieldErrors.location" class="field-error">{{ fieldErrors.location }}</p></div></div>
-          <LocationPicker @select="selectLocation" />
-          <div class="map-picker"><MapPin /><div><b>地图选点已开启</b><p>当前坐标：{{ latitude.toFixed(5) }}, {{ longitude.toFixed(5) }} · {{ form.location || '点击地图选择集合点' }}</p></div><button @click="selectLocation({ location:'桥西历史文化街区游客中心', district:'拱墅区', longitude:120.139863, latitude:30.318332 })">选用推荐点位</button></div>
+          <div class="form-grid"><div class="input-group"><label>活动城市 *</label><select v-model="form.city" class="select" @change="changeCity"><option v-for="item in supportedCities" :key="item">{{ item }}</option></select></div><div class="input-group"><label>城区 *</label><select v-model="form.district" class="select"><option v-for="item in districtOptions" :key="item">{{ item }}</option></select></div></div>
+          <div class="input-group manual-address"><label>集合地点 *</label><input v-model.trim="form.location" class="input" placeholder="地图不可用时可直接输入完整地址" /><small>支持手动输入；地图选点成功后会自动覆盖为精确地址。</small><p v-if="fieldErrors.location" class="field-error">{{ fieldErrors.location }}</p></div>
+          <LocationPicker :city="form.city" :location="form.location" :district="form.district" :longitude="longitude" :latitude="latitude" @select="selectLocation" />
+          <div class="map-picker"><MapPin /><div><b>{{ form.city }}地图选点已开启</b><p>当前坐标：{{ latitude.toFixed(5) }}, {{ longitude.toFixed(5) }} · {{ form.location || '点击地图选择集合点' }}</p></div><button type="button" @click="useRecommendedLocation">选用{{ form.city }}推荐点</button></div>
         </template>
 
         <template v-else-if="step===3">
@@ -336,7 +359,7 @@ onMounted(async () => {
         </template>
 
         <template v-else>
-          <div class="preview-card"><div><span>{{ form.category }}</span><b>{{ form.price ? `¥${form.price}` : '免费' }}</b></div><h2>{{ form.title || '未填写活动名称' }}</h2><p>{{ form.summary || '未填写活动简介' }}</p><dl><div><dt><CalendarDays />时间</dt><dd>{{ form.date }} {{ form.startTime }} - {{ form.endTime }}</dd></div><div><dt><MapPin />地点</dt><dd>{{ form.district }} · {{ form.location }}</dd></div><div><dt><Users />参与</dt><dd>上限 {{ form.capacity }} 人 · 截止 {{ form.deadline.replace('T',' ') }}</dd></div><div><dt><ShieldCheck />审核</dt><dd>{{ reviewMode }}</dd></div></dl></div>
+          <div class="preview-card"><div><span>{{ form.category }}</span><b>{{ form.price ? `¥${form.price}` : '免费' }}</b></div><h2>{{ form.title || '未填写活动名称' }}</h2><p>{{ form.summary || '未填写活动简介' }}</p><dl><div><dt><CalendarDays />时间</dt><dd>{{ form.date }} {{ form.startTime }} - {{ form.endTime }}</dd></div><div><dt><MapPin />地点</dt><dd>{{ form.city }} · {{ form.district }} · {{ form.location }}</dd></div><div><dt><Users />参与</dt><dd>上限 {{ form.capacity }} 人 · 截止 {{ form.deadline.replace('T',' ') }}</dd></div><div><dt><ShieldCheck />审核</dt><dd>{{ reviewMode }}</dd></div></dl><div class="coordinate-preview"><MapPin :size="14" />经纬度 {{ latitude.toFixed(6) }}, {{ longitude.toFixed(6) }}</div></div>
           <label class="submit-agreement"><input type="checkbox" checked /> 我确认活动信息真实，并同意平台内容与安全规范</label>
         </template>
 
@@ -351,5 +374,6 @@ onMounted(async () => {
 <style scoped>
 .create-page{padding:26px 0 70px}.create-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px}.create-head>a{display:flex;align-items:center;gap:5px;color:var(--color-ink-soft);font-size:13px}.create-head>div{display:flex;align-items:center;gap:12px}.create-head span{color:var(--color-ink-soft);font-size:10px}.stepper{display:flex;justify-content:center;margin-bottom:30px}.stepper button{position:relative;width:150px;border:0;background:none;display:flex;align-items:center;gap:8px;color:#aaa;font-size:11px;cursor:pointer}.stepper button:not(:last-child):after{content:'';position:absolute;right:8px;width:35px;height:1px;background:var(--color-line)}.stepper span{width:26px;height:26px;border-radius:50%;background:#ddd;display:grid;place-items:center}.stepper .active{color:var(--color-ink)}.stepper .active span{background:var(--color-primary);color:#fff}.create-layout{display:grid;grid-template-columns:1fr 280px;gap:20px;align-items:start}.panel{padding:36px}.form-title h1{margin:3px 0 8px;font-size:29px}.form-title p{color:var(--color-ink-soft)}.input-group{margin:18px 0}.input-group small{margin-top:4px;text-align:right;color:var(--color-ink-soft);font-size:9px}.templates{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:22px 0}.templates button{padding:12px;border:1px solid var(--color-line);border-radius:10px;background:var(--color-bg);display:flex;align-items:center;gap:8px;text-align:left;cursor:pointer}.templates svg{color:var(--color-primary)}.templates span{display:flex;flex-direction:column}.templates b{font-size:11px}.templates small{margin-top:3px;color:var(--color-ink-soft);font-size:8px}.map-picker{padding:18px;border:1px dashed var(--color-primary);border-radius:13px;background:var(--color-primary-soft);display:flex;align-items:center;gap:12px}.map-picker>svg{color:var(--color-primary)}.map-picker div{flex:1}.map-picker b{font-size:12px}.map-picker p{margin:4px 0 0;color:var(--color-ink-soft);font-size:10px}.map-picker button{border:0;background:#fff;border-radius:8px;padding:8px;font-size:9px;font-weight:700}.review-mode{min-height:47px;padding:9px 12px;border-radius:10px;background:var(--color-mint-soft);display:flex;align-items:center;gap:8px;color:var(--color-mint)}.review-mode span{display:flex;flex-direction:column}.review-mode b{font-size:11px}.review-mode small{font-size:8px;text-align:left}.field-checks{display:flex;flex-wrap:wrap;gap:7px}.field-checks button{padding:8px 10px;border:1px solid var(--color-line);border-radius:8px;background:#fff;color:var(--color-ink-soft);display:flex;align-items:center;gap:4px;font-size:10px}.field-checks button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary)}.preview-card{margin-top:22px;padding:25px;border:1px solid var(--color-line);border-radius:15px;background:var(--color-bg)}.preview-card>div:first-child{display:flex;justify-content:space-between;color:var(--color-primary);font-size:11px;font-weight:800}.preview-card h2{margin:14px 0 8px}.preview-card>p{color:var(--color-ink-soft);line-height:1.7}.preview-card dl{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:22px 0 0}.preview-card dl>div{padding:12px;background:#fff;border-radius:9px}.preview-card dt{display:flex;align-items:center;gap:5px;color:var(--color-ink-soft);font-size:9px}.preview-card dt svg{width:14px}.preview-card dd{margin:7px 0 0;font-size:11px;font-weight:700}.submit-agreement{display:block;margin:18px 0;font-size:11px}.form-error{padding:10px;border-radius:8px;background:#ffeaed;color:var(--color-danger);font-size:11px}.form-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:24px}.ai-helper,.tips{margin-bottom:14px;padding:22px;border-radius:var(--radius-md)}.ai-helper{background:linear-gradient(145deg,#2b2051,#6f4ad8);color:#fff}.ai-helper>svg{color:#d9c8ff}.ai-helper h3{margin:14px 0 7px}.ai-helper p{color:#d2cae6;font-size:11px;line-height:1.7}.ai-helper a{color:#fff;font-size:11px;font-weight:800}.tips{background:#fff;border:1px solid var(--color-line)}.tips p{color:var(--color-ink-soft);font-size:10px}.submit-result{max-width:720px;margin:70px auto;text-align:center}.submit-result>span{width:70px;height:70px;margin:auto;border-radius:50%;background:var(--color-mint-soft);color:var(--color-mint);display:grid;place-items:center}.submit-result h1{margin:20px 0 10px}.submit-result p{color:var(--color-ink-soft)}.submit-result>div{display:flex;justify-content:center;gap:10px;margin-top:24px}
 .field-error{margin-top:6px;color:var(--color-danger);font-size:10px}
+.manual-address small{display:block;text-align:left;color:var(--color-mint)}.coordinate-preview{margin-top:13px;padding-top:12px;border-top:1px dashed var(--color-line);display:flex;align-items:center;gap:5px;color:var(--color-ink-soft);font-size:10px}
 @media(max-width:850px){.create-layout{grid-template-columns:1fr}.create-layout aside{display:grid;grid-template-columns:1fr 1fr;gap:12px}.stepper button{width:auto;flex:1}.stepper button:after{display:none}.templates{grid-template-columns:1fr}.preview-card dl{grid-template-columns:1fr}}@media(max-width:600px){.create-head>div>span,.stepper b{display:none}.stepper button{justify-content:center}.panel{padding:22px}.create-layout aside{grid-template-columns:1fr}.map-picker{align-items:flex-start;flex-wrap:wrap}}
 </style>

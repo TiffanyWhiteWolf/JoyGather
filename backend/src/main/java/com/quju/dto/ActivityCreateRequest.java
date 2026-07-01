@@ -16,6 +16,7 @@ public class ActivityCreateRequest {
     private String endTime;
     private String deadline;
     @NotBlank(message = "活动地点不能为空") private String location;
+    private String city;
     private String district;
     private String cover;
     private BigDecimal longitude;
@@ -51,6 +52,8 @@ public class ActivityCreateRequest {
     public void setDeadline(String deadline) { this.deadline = deadline; }
     public String getLocation() { return location; }
     public void setLocation(String location) { this.location = location; }
+    public String getCity() { return city; }
+    public void setCity(String city) { this.city = city; }
     public String getDistrict() { return district; }
     public void setDistrict(String district) { this.district = district; }
     public String getCover() { return cover; }

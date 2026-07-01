@@ -1,10 +1,14 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { apiGet, apiPut } from '@/lib/api'
-import type { ActivityDraft, NotificationItem } from '@/types'
+import type { NotificationItem } from '@/types'
+import { apiGet ,apiPut} from '@/lib/api'
+import type { ActivityDraft } from '@/types'
+import type { SupportedCity } from '@/config/cities'
+import { getCityConfig } from '@/config/cities'
 
 export const useAppStore = defineStore('app', () => {
-  const city = ref('杭州')
+  const savedCity = localStorage.getItem('quju:city')
+  const city = ref<SupportedCity>(getCityConfig(savedCity ?? undefined).name)
   const notificationItems = ref<NotificationItem[]>([])
   const joinedActivityIds = ref<string[]>([])
   const waitingActivityIds = ref<string[]>([])
@@ -24,6 +28,11 @@ export const useAppStore = defineStore('app', () => {
     toast.value = message
     window.clearTimeout(toastTimer)
     toastTimer = window.setTimeout(() => { toast.value = '' }, 2600)
+  }
+
+  function setCity(value: SupportedCity) {
+    city.value = value
+    localStorage.setItem('quju:city', value)
   }
 
   function myTeamRole(teamId: string): string | undefined {
@@ -199,7 +208,7 @@ export const useAppStore = defineStore('app', () => {
 
   return {
     city, notifications, notificationItems, joinedActivityIds, waitingActivityIds, joinedTeamIds, teamRoles, friendIds, followedIds, blockedIds, draft, submittedActivities, toast,
-    registrationCount, showToast, joinActivity, cancelRegistration, joinTeam, addFriend, removeFriend, addFollowedId, removeFollowedId, addBlockedId, removeBlockedId, saveDraft, clearDraft, submitActivity, clearUserState, refreshUserState, refreshNotifications, markNotificationRead,
+    registrationCount, setCity, showToast, joinActivity, cancelRegistration, joinTeam, addFriend, removeFriend, addFollowedId, removeFollowedId, addBlockedId, removeBlockedId, saveDraft, clearDraft, submitActivity, clearUserState, refreshUserState,refreshNotifications, markNotificationRead,
     myTeamRole, isTeamOwner, isTeamAdmin,
   }
 })

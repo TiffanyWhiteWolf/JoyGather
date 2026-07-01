@@ -38,6 +38,7 @@ export interface Activity {
   endAt?: string
   deadline?: string
   location: string
+  city: '杭州' | '北京'
   district: string
   distance: number
   longitude: number
@@ -143,6 +144,7 @@ export interface ActivityDraft {
   startTime: string
   endTime: string
   location: string
+  city: '杭州' | '北京'
   district: string
   capacity: number
   deadline: string
