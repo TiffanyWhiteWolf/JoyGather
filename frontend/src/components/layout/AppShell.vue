@@ -31,6 +31,8 @@ const nav = [
 const noticePreview = computed(() => app.notificationItems.slice(0, 8))
 
 async function loadCurrentUser() {
+  const token = localStorage.getItem('quju:token')
+  if (!token) return
   try {
     currentUser.value = await apiGet<User>('/auth/me')
     await app.refreshUserState()
@@ -230,7 +232,7 @@ onBeforeUnmount(() => {
 .city-menu{display:grid;gap:4px}
 .city-menu button{padding:8px 10px;border:0;border-radius:8px;background:#fff;text-align:left;font-size:12px}
 .city-menu button.active,.city-menu button:hover{background:var(--color-primary-soft);color:var(--color-primary);font-weight:800}
-.notice-menu{width:320px;display:grid;gap:8px}
+.notice-menu{width:320px;max-height:360px;overflow-y:auto;display:grid;gap:8px}
 .notice-menu b{display:block;margin-bottom:2px;font-size:12px}
 .notice-item{padding:10px 0;border:0;border-top:1px solid var(--color-line);background:none;text-align:left;display:grid;gap:5px;cursor:pointer}
 .notice-item.unread strong{color:var(--color-primary)}

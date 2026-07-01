@@ -52,7 +52,7 @@ class UsA04AccountCancellationTest extends TestBase {
         String token = loginAsUser();
         userService.cancelAccount("Bearer " + token, cancelRequest(USER_PASS));
 
-        AuthDtos.ActivationResponse response = userService.register(registerRequest(USER_EMAIL, USER_PASS, USER_PASS, "小满"));
+        AuthDtos.ActivationResponse response = userService.register(registerRequest(USER_EMAIL, USER_PASS, USER_PASS, "小满"), "http://localhost");
         assertNotNull(response.getUserId());
         assertNotEquals(USER_ID, response.getUserId());
     }

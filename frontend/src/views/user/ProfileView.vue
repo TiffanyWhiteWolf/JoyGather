@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Building2, CalendarDays, Camera, CheckCircle2, ChevronRight, Copy, FileCheck, FileText, Heart, MapPin, Navigation, QrCode, Send, Settings, ShieldAlert, Star, Trash2, Users, X } from 'lucide-vue-next'
+import { ArrowUpDown, Building2, CalendarDays, Camera, CheckCircle2, ChevronRight, Copy, FileCheck, FileText, Heart, MapPin, Navigation, QrCode, ScanLine, Search, Send, Settings, ShieldAlert, Star, Trash2, Users, X } from 'lucide-vue-next'
 import QRCode from 'qrcode'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -49,15 +49,73 @@ interface RegistrationManagementRow {
 const profileTabs = ['我的活动', '商家中心', '动态', '收藏', '活动总结'] as const
 type ProfileTab = typeof profileTabs[number]
 
+const activitySubTabs = ['我创建的', '我参与的'] as const
+type ActivitySubTab = typeof activitySubTabs[number]
+
 const router = useRouter()
 const app = useAppStore()
 const currentUser = ref<User | null>(null)
 const activities = ref<Activity[]>([])
+const joinedActivities = ref<Activity[]>([])
+const activitySubTab = ref<ActivitySubTab>('我创建的')
+
+const activitySearch = ref('')
+const activitySort = ref<'newest' | 'oldest' | 'name'>('newest')
+const joinedStatusFilter = ref<'全部' | '报名中' | '签到中' | '活动中' | '已结束'>('全部')
+const createdStatusFilter = ref<'全部' | '报名中' | '签到中' | '活动中' | '已结束'>('全部')
+
+const createdStatusOptions = ['全部', '报名中', '签到中', '活动中', '已结束'] as const
+const joinedStatusOptions = ['全部', '报名中', '签到中', '活动中', '已结束'] as const
+
+function statusMatch(activity: Activity, filter: string) {
+  if (filter === '全部') return true
+  if (filter === '签到中') return activity.status === '已截止' || activity.status === '进行中'
+  if (filter === '活动中') return activity.status === '进行中'
+  return activity.status === filter
+}
+
+const allTags = computed(() => {
+  const tags = new Set<string>()
+  activities.value.forEach(a => a.tags.forEach(t => tags.add(t)))
+  joinedActivities.value.forEach(a => a.tags.forEach(t => tags.add(t)))
+  return Array.from(tags).sort()
+})
+
+function matchesSearch(activity: Activity) {
+  const q = activitySearch.value.trim().toLowerCase()
+  if (!q) return true
+  return activity.title.toLowerCase().includes(q)
+    || activity.tags.some(t => t.toLowerCase().includes(q))
+    || activity.location.toLowerCase().includes(q)
+}
+
+const filteredCreated = computed(() => {
+  let list = activities.value.filter(matchesSearch)
+  if (createdStatusFilter.value !== '全部') {
+    list = list.filter(a => statusMatch(a, createdStatusFilter.value))
+  }
+  return list.sort((a, b) => {
+    if (activitySort.value === 'name') return a.title.localeCompare(b.title, 'zh')
+    const da = new Date(a.startAt || a.updatedAt || '').getTime()
+    const db = new Date(b.startAt || b.updatedAt || '').getTime()
+    return activitySort.value === 'oldest' ? da - db : db - da
+  })
+})
+
+const filteredJoined = computed(() => {
+  let list = joinedActivities.value.filter(matchesSearch)
+  if (joinedStatusFilter.value !== '全部') {
+    list = list.filter(a => statusMatch(a, joinedStatusFilter.value))
+  }
+  return list.sort((a, b) => {
+    if (activitySort.value === 'name') return a.title.localeCompare(b.title, 'zh')
+    const da = new Date(a.startAt || '').getTime()
+    const db = new Date(b.startAt || '').getTime()
+    return activitySort.value === 'oldest' ? da - db : db - da
+  })
+})
 const editing = ref(false)
 const activeTab = ref<ProfileTab>('我的活动')
-const activityFilters = ['全部', '未结束', '已结束'] as const
-type ActivityFilter = typeof activityFilters[number]
-const activityFilter = ref<ActivityFilter>('全部')
 const saving = ref(false)
 const uploadingAvatar = ref(false)
 const uploadingLicense = ref(false)
@@ -112,16 +170,6 @@ const customInterestTags = computed(() => parseInterestTags().filter(tag => !sug
 const checkedInCount = computed(() => checkinRows.value.filter(item => item.status === '已签到').length)
 const registeredCount = computed(() => checkinRows.value.filter(item => item.status === '已报名' || item.status === '已签到').length)
 const waitingCount = computed(() => checkinRows.value.filter(item => item.status === '候补中').length)
-const filteredActivities = computed(() => {
-  if (activityFilter.value === '已结束') return activities.value.filter(item => item.status === '已结束')
-  if (activityFilter.value === '未结束') return activities.value.filter(item => item.status !== '已结束')
-  return activities.value
-})
-const activityFilterCount = (filter: ActivityFilter) => {
-  if (filter === '已结束') return activities.value.filter(item => item.status === '已结束').length
-  if (filter === '未结束') return activities.value.filter(item => item.status !== '已结束').length
-  return activities.value.length
-}
 const merchantStatusText = computed(() => {
   if (currentUser.value?.role === '商家用户') return currentUser.value.verified ? '已认证商家' : '商家账号'
   if (latestMerchantApplication.value) return `认证${latestMerchantApplication.value.status}`
@@ -155,6 +203,7 @@ onMounted(async () => {
       licenseUrl: latestApplication?.licenseUrl || '',
     })
     activities.value = rows
+    apiGet<Activity[]>('/activities/joined').then(list => { joinedActivities.value = list }).catch((err) => { console.error('加载参与的活动失败:', err) })
   } catch {
     router.push('/auth')
   }
@@ -511,21 +560,61 @@ async function cancelAccount() {
         </div>
 
         <template v-if="activeTab==='我的活动'">
-          <div v-if="activities.length" class="activity-status-tabs">
-            <button v-for="filter in activityFilters" :key="filter" :class="{ active: activityFilter === filter }" @click="activityFilter=filter">
-              {{ filter }} <span>{{ activityFilterCount(filter) }}</span>
+          <div class="activity-subtabs">
+            <button v-for="sub in activitySubTabs" :key="sub" :class="{ active: activitySubTab === sub }" @click="activitySubTab = sub">
+              {{ sub }}
+              <span v-if="sub === '我创建的'">({{ filteredCreated.length }})</span>
+              <span v-else>({{ filteredJoined.length }})</span>
             </button>
           </div>
-          <div v-if="filteredActivities.length" class="activity-grid managed-activities">
-            <div v-for="activity in filteredActivities" :key="activity.id" class="managed-activity">
-              <ActivityCard :activity="activity" show-status />
-              <div class="activity-tools">
-                <span :class="{ ended: activity.status === '已结束' }">{{ activity.status }}</span>
-                <button @click="openCheckinManagement(activity)"><QrCode :size="15" />签到管理</button>
+
+          <!-- 筛选工具栏 -->
+          <div class="activity-toolbar">
+            <label class="search-label"><Search :size="15" /><input v-model="activitySearch" placeholder="搜索活动名称、标签或地点" /></label>
+            <select v-model="activitySort" class="sort-select">
+              <option value="newest">按时间从新到旧</option>
+              <option value="oldest">按时间从旧到新</option>
+              <option value="name">按名称排序</option>
+            </select>
+          </div>
+
+          <template v-if="activitySubTab === '我创建的'">
+            <div class="status-filter-tabs">
+              <button v-for="opt in createdStatusOptions" :key="opt" :class="{ active: createdStatusFilter === opt }" @click="createdStatusFilter = opt">
+                {{ opt }}
+                <span v-if="opt !== '全部'">({{ activities.filter(a => statusMatch(a, opt)).length }})</span>
+              </button>
+            </div>
+            <div v-if="filteredCreated.length" class="activity-grid managed-activities">
+              <div v-for="activity in filteredCreated" :key="activity.id" class="managed-activity">
+                <ActivityCard :activity="activity" show-status>
+                  <template #actions>
+                    <button class="card-action-btn" @click="openCheckinManagement(activity)"><QrCode :size="14" />签到管理</button>
+                  </template>
+                </ActivityCard>
               </div>
             </div>
-          </div>
-          <div v-else class="empty-state">{{ activities.length ? `暂无${activityFilter}活动。` : '你还没有发布活动。' }}</div>
+            <div v-else class="empty-state">{{ activitySearch ? '没有匹配的活动' : '你还没有发布活动。' }}</div>
+          </template>
+
+          <template v-else>
+            <div class="status-filter-tabs">
+              <button v-for="opt in joinedStatusOptions" :key="opt" :class="{ active: joinedStatusFilter === opt }" @click="joinedStatusFilter = opt">
+                {{ opt }}
+                <span v-if="opt !== '全部'">({{ joinedActivities.filter(a => statusMatch(a, opt)).length }})</span>
+              </button>
+            </div>
+            <div v-if="filteredJoined.length" class="activity-grid managed-activities">
+              <div v-for="activity in filteredJoined" :key="activity.id" class="managed-activity">
+                <ActivityCard :activity="activity" show-status>
+                  <template v-if="activity.status === '进行中' || activity.status === '已截止'" #actions>
+                    <button class="card-action-btn checkin" @click="router.push('/check-in')"><ScanLine :size="14" />扫码签到</button>
+                  </template>
+                </ActivityCard>
+              </div>
+            </div>
+            <div v-else class="empty-state">{{ activitySearch ? '没有匹配的活动' : '你还没有参与任何活动。' }}</div>
+          </template>
         </template>
 
         <template v-else-if="activeTab==='商家中心'">
@@ -695,10 +784,22 @@ async function cancelAccount() {
 .profile-tabs{display:flex;gap:22px;margin-bottom:18px;border-bottom:1px solid var(--color-line)}
 .profile-tabs button{padding:12px 2px;border:0;border-bottom:2px solid transparent;background:none;color:var(--color-ink-soft);font-weight:700;white-space:nowrap}
 .profile-tabs button.active{border-color:var(--color-primary);color:var(--color-ink)}
-.activity-status-tabs{display:flex;gap:8px;margin-bottom:16px}
-.activity-status-tabs button{padding:8px 12px;border:1px solid var(--color-line);border-radius:var(--radius-pill);background:#fff;color:var(--color-ink-soft);font-size:11px;font-weight:800}
-.activity-status-tabs button span{margin-left:4px;color:inherit;opacity:.7}
-.activity-status-tabs button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary)}
+.activity-subtabs{display:flex;gap:8px;margin-bottom:14px}
+.activity-subtabs button{padding:8px 14px;border:1px solid var(--color-line);border-radius:var(--radius-pill);background:#fff;color:var(--color-ink-soft);font-size:12px;font-weight:700}
+.activity-subtabs button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary)}
+.activity-subtabs button span{font-weight:400;opacity:.7}
+.activity-toolbar{display:flex;gap:10px;margin-bottom:12px}
+.search-label{flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--color-line);border-radius:10px;background:#fff}
+.search-label input{border:0;outline:0;flex:1;font-size:12px}
+.sort-select{padding:10px 12px;border:1px solid var(--color-line);border-radius:10px;background:#fff;font-size:12px;color:var(--color-ink);outline:none}
+.status-filter-tabs{display:flex;gap:6px;margin-bottom:14px}
+.status-filter-tabs button{padding:6px 12px;border:1px solid var(--color-line);border-radius:var(--radius-pill);background:#fff;color:var(--color-ink-soft);font-size:11px;font-weight:700;transition:.15s}
+.status-filter-tabs button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary)}
+.status-filter-tabs button span{font-weight:400;opacity:.7}
+.card-action-btn{padding:6px 10px;border:0;border-radius:7px;background:var(--color-primary-soft);color:var(--color-primary);display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;cursor:pointer;transition:all .15s}
+.card-action-btn:hover{background:var(--color-primary);color:#fff}
+.card-action-btn.checkin{background:var(--color-mint-soft);color:var(--color-mint)}
+.card-action-btn.checkin:hover{background:var(--color-mint);color:#fff}
 .profile-grid .activity-grid{grid-template-columns:1fr 1fr}
 .side-card{margin-bottom:15px;padding:20px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}
 .side-card h3{font-size:14px}
@@ -741,10 +842,6 @@ async function cancelAccount() {
 .empty-state{padding:36px;background:#fff;border:1px dashed var(--color-line);border-radius:var(--radius-md);color:var(--color-ink-soft);text-align:center}
 .empty-state.small{padding:20px;font-size:11px}
 .managed-activity{display:grid;gap:8px}
-.activity-tools{padding:10px;border:1px solid var(--color-line);border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:8px}
-.activity-tools span{padding:5px 7px;border-radius:6px;background:var(--color-mint-soft);color:var(--color-mint);font-size:10px;font-weight:800}
-.activity-tools span.ended{background:var(--color-bg);color:var(--color-ink-soft)}
-.activity-tools button{border:0;background:none;color:var(--color-primary);display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800}
 .merchant-panel{padding:22px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}
 .merchant-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
 .merchant-head h2{margin:4px 0 6px}
@@ -833,8 +930,6 @@ async function cancelAccount() {
   .profile-grid aside{grid-template-columns:1fr}
   .merchant-head{flex-direction:column}
   .profile-tabs{gap:12px;overflow:auto}
-  .activity-tools{align-items:flex-start;flex-direction:column}
-  .activity-tools button{width:100%;justify-content:center;padding:8px;border:1px solid var(--color-line);border-radius:8px;background:#fff}
   .checkin-summary{grid-template-columns:1fr}
   .registration-row{grid-template-columns:40px 1fr}
   .registration-row .status-tag{grid-column:2}

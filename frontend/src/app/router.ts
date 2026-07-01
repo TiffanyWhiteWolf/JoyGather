@@ -7,6 +7,7 @@ const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
   routes: [
     { path: '/auth', name: 'auth', component: () => import('@/views/AuthView.vue') },
+    { path: '/login-required', name: 'login-required', component: () => import('@/views/LoginRequiredView.vue') },
     {
       path: '/', component: AppShell, children: [
         { path: '', name: 'home', component: () => import('@/views/user/HomeView.vue') },
@@ -32,6 +33,7 @@ const router = createRouter({
         { path: 'activities/:id', name: 'admin-activity-detail', component: () => import('@/views/admin/ActivityDetailView.vue') },
         { path: 'users', name: 'admin-users', component: () => import('@/views/admin/UsersView.vue') },
         { path: 'content', name: 'admin-content', component: () => import('@/views/admin/ContentView.vue') },
+        { path: 'notifications', name: 'admin-notifications', component: () => import('@/views/admin/NotificationsView.vue') },
       ],
     },
     { path: '/:pathMatch(.*)*', component: () => import('@/views/NotFoundView.vue') },
@@ -50,10 +52,10 @@ router.beforeEach((to) => {
     /* ignore */
   }
 
-  // Protected user paths require login
-  const protectedPaths = ['/create', '/drafts', '/messages', '/profile', '/check-in', '/teams/']
-  if (protectedPaths.some(path => to.path.startsWith(path)) && !token) {
-    return { path: '/auth', query: { redirect: to.fullPath } }
+  // Only home, auth, and login-required are accessible without login
+  const publicPaths = ['/', '/auth', '/login-required']
+  if (!token && !publicPaths.includes(to.path) && !to.path.startsWith('/auth?')) {
+    return { path: '/login-required', query: { redirect: to.fullPath } }
   }
 
 
