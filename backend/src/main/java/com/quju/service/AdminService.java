@@ -20,11 +20,13 @@ public class AdminService {
     private final JdbcTemplate jdbc;
     private final ActivityService activityService;
     private final UserService userService;
+    private final SocialService socialService;
 
-    public AdminService(JdbcTemplate jdbc, ActivityService activityService, UserService userService) {
+    public AdminService(JdbcTemplate jdbc, ActivityService activityService, UserService userService, SocialService socialService) {
         this.jdbc = jdbc;
         this.activityService = activityService;
         this.userService = userService;
+        this.socialService = socialService;
     }
 
     public DashboardDto dashboard() {
@@ -60,16 +62,18 @@ public class AdminService {
             if ("已通过".equals(result)) jdbc.update("update activities set status = '报名中', published_at = now() where id = ?", targetId);
             if ("已驳回".equals(result)) jdbc.update("update activities set status = '已下架', offline_reason = ? where id = ?", reason, targetId);
             if ("要求修改".equals(result)) jdbc.update("update activities set status = '审核中', offline_reason = ? where id = ?", reason, targetId);
+            notifyActivityReviewResult(targetId, result, reason);
         }
         if ("商家认证".equals(type)) {
             jdbc.update("update merchant_applications set status = ?, reason = ?, reviewed_at = now(), reviewer_id = ? where id = ?", result, reason, handlerId, targetId);
+            List<Map<String, Object>> merchants = jdbc.queryForList("select user_id, merchant_name from merchant_applications where id = ?", targetId);
             if ("已通过".equals(result)) {
-                List<Map<String, Object>> merchants = jdbc.queryForList("select user_id, merchant_name from merchant_applications where id = ?", targetId);
                 if (!merchants.isEmpty()) {
                     jdbc.update("update users set verified = 1, role = '商家用户', merchant_name = ? where id = ?",
                             merchants.get(0).get("merchant_name"), merchants.get(0).get("user_id"));
                 }
             }
+            notifyMerchantReviewResult(merchants, result, reason, targetId);
         }
         log(handlerId, "HANDLE_REVIEW", "REVIEW", id, result + ":" + DbSupport.safe(reason, ""));
     }
@@ -126,5 +130,43 @@ public class AdminService {
     private void log(String actorId, String action, String targetType, String targetId, String reason) {
         jdbc.update("insert into audit_logs (id,actor_id,action,target_type,target_id,reason) values (?,?,?,?,?,?)",
                 DbSupport.id("log"), actorId, action, targetType, targetId, reason);
+    }
+
+    private void notifyActivityReviewResult(String activityId, String result, String reason) {
+        if (socialService == null) return;
+        List<Map<String, Object>> activities = jdbc.queryForList("select organizer_id, title from activities where id = ?", activityId);
+        if (activities.isEmpty()) return;
+        String activityTitle = String.valueOf(activities.get(0).get("title"));
+        String organizerId = String.valueOf(activities.get(0).get("organizer_id"));
+        String content;
+        if ("已通过".equals(result)) {
+            content = "您发起的活动已通过审核，现在已可对外报名。";
+        } else if ("要求修改".equals(result)) {
+            content = "您的活动需要修改后再次提交。" + (DbSupport.safe(reason, "").isEmpty() ? "" : " 原因：" + DbSupport.safe(reason, ""));
+        } else {
+            content = "您发起的活动未通过审核。" + (DbSupport.safe(reason, "").isEmpty() ? "" : " 原因：" + DbSupport.safe(reason, ""));
+        }
+        String title = "已通过".equals(result)
+                ? "活动审核已通过：" + activityTitle
+                : ("要求修改".equals(result) ? "活动需要修改：" + activityTitle : "活动审核未通过：" + activityTitle);
+        socialService.createNotification(organizerId, "活动审核结果", title, content, "activity", activityId);
+    }
+
+    private void notifyMerchantReviewResult(List<Map<String, Object>> merchants, String result, String reason, String targetId) {
+        if (socialService == null || merchants == null || merchants.isEmpty()) return;
+        String userId = String.valueOf(merchants.get(0).get("user_id"));
+        String merchantName = String.valueOf(merchants.get(0).get("merchant_name"));
+        String content;
+        if ("已通过".equals(result)) {
+            content = merchantName + " 的商家认证已通过，您现在可以使用商家相关功能。";
+        } else if ("要求修改".equals(result)) {
+            content = merchantName + " 的商家认证信息需要调整。" + (DbSupport.safe(reason, "").isEmpty() ? "" : " 原因：" + DbSupport.safe(reason, ""));
+        } else {
+            content = merchantName + " 的商家认证未通过。" + (DbSupport.safe(reason, "").isEmpty() ? "" : " 原因：" + DbSupport.safe(reason, ""));
+        }
+        String title = "已通过".equals(result)
+                ? "商家认证已通过"
+                : ("要求修改".equals(result) ? "商家认证需要修改" : "商家认证未通过");
+        socialService.createNotification(userId, "商家认证结果", title, content, "merchant_application", targetId);
     }
 }

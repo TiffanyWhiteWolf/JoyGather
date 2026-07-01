@@ -240,3 +240,15 @@ export interface ActivityAfterEvent {
   eligibilityMessage: string
   myReview?: ActivityReview
 }
+
+export interface NotificationItem {
+  id: string
+  userId: string
+  type: string
+  title: string
+  content?: string
+  targetType?: string
+  targetId?: string
+  read: boolean
+  createdAt?: string
+}

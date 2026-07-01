@@ -1,11 +1,11 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { apiGet } from '@/lib/api'
-import type { ActivityDraft } from '@/types'
+import { apiGet, apiPut } from '@/lib/api'
+import type { ActivityDraft, NotificationItem } from '@/types'
 
 export const useAppStore = defineStore('app', () => {
   const city = ref('杭州')
-  const notifications = ref(3)
+  const notificationItems = ref<NotificationItem[]>([])
   const joinedActivityIds = ref<string[]>([])
   const waitingActivityIds = ref<string[]>([])
   const teamRoles = ref<Record<string, string>>({})
@@ -18,6 +18,7 @@ export const useAppStore = defineStore('app', () => {
   let toastTimer = 0
 
   const joinedTeamIds = computed(() => Object.keys(teamRoles.value))
+  const notifications = computed(() => notificationItems.value.filter(item => !item.read).length)
 
   function showToast(message: string) {
     toast.value = message
@@ -106,6 +107,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function clearUserState() {
+    notificationItems.value = []
     joinedActivityIds.value = []
     waitingActivityIds.value = []
     teamRoles.value = {}
@@ -120,6 +122,12 @@ export const useAppStore = defineStore('app', () => {
     if (!localStorage.getItem('quju:token')) {
       clearUserState()
       return
+    }
+    try {
+      const rows = await apiGet<Record<string, unknown>[]>('/notifications')
+      notificationItems.value = rows.map(mapNotification)
+    } catch {
+      notificationItems.value = []
     }
     try {
       const statuses = await apiGet<Record<string, string>>('/activities/registrations/me')
@@ -153,11 +161,45 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  async function refreshNotifications() {
+    if (!localStorage.getItem('quju:token')) {
+      notificationItems.value = []
+      return
+    }
+    try {
+      const rows = await apiGet<Record<string, unknown>[]>('/notifications')
+      notificationItems.value = rows.map(mapNotification)
+    } catch {
+      notificationItems.value = []
+    }
+  }
+
+  async function markNotificationRead(id: string) {
+    const target = notificationItems.value.find(item => item.id === id)
+    if (!target || target.read) return
+    await apiPut<void>(`/notifications/${id}/read`, {})
+    target.read = true
+  }
+
+  function mapNotification(row: Record<string, unknown>): NotificationItem {
+    return {
+      id: String(row.id ?? ''),
+      userId: String(row.user_id ?? row.userId ?? ''),
+      type: String(row.type ?? ''),
+      title: String(row.title ?? ''),
+      content: typeof row.content === 'string' ? row.content : '',
+      targetType: typeof row.target_type === 'string' ? row.target_type : (typeof row.targetType === 'string' ? row.targetType : ''),
+      targetId: typeof row.target_id === 'string' ? row.target_id : (typeof row.targetId === 'string' ? row.targetId : ''),
+      read: row.read_flag === 1 || row.read_flag === true || row.readFlag === 1 || row.readFlag === true,
+      createdAt: typeof row.created_at === 'string' ? row.created_at : (typeof row.createdAt === 'string' ? row.createdAt : ''),
+    }
+  }
+
   const registrationCount = computed(() => joinedActivityIds.value.length)
 
   return {
-    city, notifications, joinedActivityIds, waitingActivityIds, joinedTeamIds, teamRoles, friendIds, followedIds, blockedIds, draft, submittedActivities, toast,
-    registrationCount, showToast, joinActivity, cancelRegistration, joinTeam, addFriend, removeFriend, addFollowedId, removeFollowedId, addBlockedId, removeBlockedId, saveDraft, clearDraft, submitActivity, clearUserState, refreshUserState,
+    city, notifications, notificationItems, joinedActivityIds, waitingActivityIds, joinedTeamIds, teamRoles, friendIds, followedIds, blockedIds, draft, submittedActivities, toast,
+    registrationCount, showToast, joinActivity, cancelRegistration, joinTeam, addFriend, removeFriend, addFollowedId, removeFollowedId, addBlockedId, removeBlockedId, saveDraft, clearDraft, submitActivity, clearUserState, refreshUserState, refreshNotifications, markNotificationRead,
     myTeamRole, isTeamOwner, isTeamAdmin,
   }
 })

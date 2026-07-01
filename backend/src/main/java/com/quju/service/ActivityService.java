@@ -44,17 +44,19 @@ public class ActivityService {
     private final JdbcTemplate jdbc;
     private final UserService userService;
     private final IntegrationService integrationService;
+    private final SocialService socialService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ActivityService(JdbcTemplate jdbc, UserService userService) {
-        this(jdbc, userService, null);
+        this(jdbc, userService, null, null);
     }
 
     @Autowired
-    public ActivityService(JdbcTemplate jdbc, UserService userService, IntegrationService integrationService) {
+    public ActivityService(JdbcTemplate jdbc, UserService userService, IntegrationService integrationService, SocialService socialService) {
         this.jdbc = jdbc;
         this.userService = userService;
         this.integrationService = integrationService;
+        this.socialService = socialService;
     }
 
     public List<ActivityDto> findAll(String keyword, String category) {
@@ -316,11 +318,13 @@ public class ActivityService {
             int position = nextQueuePosition(activityId);
             jdbc.update("insert into registrations (id,activity_id,user_id,status,queue_position,form_data) values (?,?,?,?,?,?)",
                     DbSupport.id("reg"), activityId, userId, "候补中", position, json(fields));
+            notifyWaitlistJoined(activity, userId, position);
             return new RegistrationResult(activityId, userId, "候补中", position, null);
         }
         jdbc.update("insert into registrations (id,activity_id,user_id,status,queue_position,form_data) values (?,?,?,?,0,?)",
                 DbSupport.id("reg"), activityId, userId, "已报名", json(fields));
         jdbc.update("update activities set joined_count = joined_count + 1 where id = ?", activityId);
+        notifyRegistered(activity, userId);
         return new RegistrationResult(activityId, userId, "已报名", 0, null);
     }
 
@@ -344,6 +348,7 @@ public class ActivityService {
                 jdbc.update("update registrations set status = '已报名', queue_position = 0 where activity_id = ? and user_id = ?", activityId, promoted);
                 jdbc.update("update activities set joined_count = least(capacity, joined_count + 1) where id = ?", activityId);
                 renumberQueue(activityId);
+                notifyWaitlistPromoted(activity, promoted);
             }
         } else {
             renumberQueue(activityId);
@@ -360,6 +365,7 @@ public class ActivityService {
         jdbc.update("update registrations set status = '已报名', queue_position = 0 where activity_id = ? and user_id = ?", activityId, userId);
         jdbc.update("update activities set joined_count = joined_count + 1 where id = ?", activityId);
         renumberQueue(activityId);
+        notifyWaitlistPromoted(activity, userId);
         return new RegistrationResult(activityId, userId, "已报名", 0, null);
     }
 
@@ -562,6 +568,7 @@ public class ActivityService {
     public void takeOffline(String id, String reason, String actorId) {
         if (reason == null || reason.trim().isEmpty()) throw new IllegalStateException("下架原因不能为空");
         jdbc.update("update activities set status = '已下架', offline_reason = ? where id = ?", reason.trim(), id);
+        notifyActivityOffline(id, reason.trim());
         log(actorId, "OFFLINE_ACTIVITY", "ACTIVITY", id, reason);
     }
 
@@ -583,8 +590,59 @@ public class ActivityService {
             String activityId = targetIds.get(0);
             if ("已通过".equals(result)) jdbc.update("update activities set status = '报名中', published_at = now() where id = ?", activityId);
             if ("已驳回".equals(result)) jdbc.update("update activities set status = '已下架', offline_reason = ? where id = ?", reason, activityId);
+            if ("要求修改".equals(result)) jdbc.update("update activities set status = '审核中', offline_reason = ? where id = ?", reason, activityId);
+            notifyActivityReviewResult(activityId, result, reason);
         }
         log(handlerId, "HANDLE_REVIEW", "REVIEW", id, result + ":" + DbSupport.safe(reason, ""));
+    }
+
+    private void notifyRegistered(ActivityDto activity, String userId) {
+        if (socialService == null) return;
+        socialService.createNotification(userId, "活动报名", "你已报名活动：" + activity.getTitle(),
+                "报名成功，请在活动详情页查看最新状态。", "activity", activity.getId());
+    }
+
+    private void notifyWaitlistJoined(ActivityDto activity, String userId, int position) {
+        if (socialService == null) return;
+        socialService.createNotification(userId, "候补通知", "你已进入活动候补：" + activity.getTitle(),
+                "当前活动名额已满，你已进入候补队列，当前排队第 " + position + " 位。", "activity", activity.getId());
+    }
+
+    private void notifyWaitlistPromoted(ActivityDto activity, String userId) {
+        if (socialService == null) return;
+        socialService.createNotification(userId, "候补通知", "你已从候补转正：" + activity.getTitle(),
+                "活动名额已释放，你已自动转为已报名。", "activity", activity.getId());
+    }
+
+    private void notifyActivityReviewResult(String activityId, String result, String reason) {
+        if (socialService == null) return;
+        ActivityDto activity = requireActivity(activityId);
+        String title;
+        String content;
+        if ("已通过".equals(result)) {
+            title = "活动审核已通过：" + activity.getTitle();
+            content = "您发起的活动已通过审核，现在已可对外报名。";
+        } else if ("要求修改".equals(result)) {
+            title = "活动需要修改：" + activity.getTitle();
+            content = "审核未通过，请根据提示修改后再次提交。" + (DbSupport.safe(reason, "").isEmpty() ? "" : " 原因：" + DbSupport.safe(reason, ""));
+        } else {
+            title = "活动审核未通过：" + activity.getTitle();
+            content = "您发起的活动未通过审核。" + (DbSupport.safe(reason, "").isEmpty() ? "" : " 原因：" + DbSupport.safe(reason, ""));
+        }
+        socialService.createNotification(activity.getOrganizer().getId(), "活动审核结果", title, content, "activity", activityId);
+    }
+
+    private void notifyActivityOffline(String activityId, String reason) {
+        if (socialService == null) return;
+        ActivityDto activity = requireActivity(activityId);
+        String content = "您的活动已被管理员下架。"
+                + (DbSupport.safe(reason, "").isEmpty() ? "" : " 原因：" + DbSupport.safe(reason, ""));
+        socialService.createNotification(activity.getOrganizer().getId(),
+                "活动下架通知",
+                "活动已下架：" + activity.getTitle(),
+                content,
+                "activity",
+                activityId);
     }
 
     private List<ActivityDto> filter(List<ActivityDto> items, String keyword, String category, String status,

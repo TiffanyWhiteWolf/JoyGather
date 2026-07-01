@@ -123,8 +123,39 @@ public class SocialService {
         return jdbc.queryForList("select * from notifications where user_id = ? order by created_at desc", userId);
     }
 
+    @Transactional
+    public void sendNotification(String senderId, SocialDtos.NotificationCreateRequest request) {
+        if (request == null) throw new IllegalStateException("通知内容不能为空");
+        String userId = request.getUserId();
+        if (userId == null || userId.trim().isEmpty()) throw new IllegalStateException("通知接收人不能为空");
+        if (request.getTitle() == null || request.getTitle().trim().isEmpty()) throw new IllegalStateException("通知标题不能为空");
+        if (request.getType() == null || request.getType().trim().isEmpty()) throw new IllegalStateException("通知类型不能为空");
+        createNotification(userId.trim(),
+                request.getType().trim(),
+                request.getTitle().trim(),
+                request.getContent(),
+                request.getTargetType(),
+                request.getTargetId());
+    }
+
     public void markNotificationRead(String id, String userId) {
         jdbc.update("update notifications set read_flag = 1 where id = ? and user_id = ?", id, userId);
+    }
+
+    @Transactional
+    public void createNotification(String userId, String type, String title, String content, String targetType, String targetId) {
+        if (userId == null || userId.trim().isEmpty()) throw new IllegalStateException("通知接收人不能为空");
+        if (title == null || title.trim().isEmpty()) throw new IllegalStateException("通知标题不能为空");
+        if (type == null || type.trim().isEmpty()) throw new IllegalStateException("通知类型不能为空");
+        userService.findById(userId.trim());
+        jdbc.update("insert into notifications (id,user_id,type,title,content,target_type,target_id) values (?,?,?,?,?,?,?)",
+                DbSupport.id("nf"),
+                userId.trim(),
+                type.trim(),
+                title.trim(),
+                content,
+                targetType,
+                targetId == null || targetId.trim().isEmpty() ? null : targetId.trim());
     }
 
     private void createFriendship(String a, String b) {

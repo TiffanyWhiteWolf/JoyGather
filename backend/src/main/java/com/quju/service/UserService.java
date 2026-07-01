@@ -4,6 +4,7 @@ import com.quju.dto.AuthDtos;
 import com.quju.dto.CommonDtos;
 import com.quju.dto.UserDto;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -28,15 +29,17 @@ public class UserService {
     public static final String DEFAULT_USER_ID = "u-001";
     private final JdbcTemplate jdbc;
     private final IntegrationService integrationService;
+    private final SocialService socialService;
 
     public UserService(JdbcTemplate jdbc) {
-        this(jdbc, null);
+        this(jdbc, null, null);
     }
 
     @Autowired
-    public UserService(JdbcTemplate jdbc, IntegrationService integrationService) {
+    public UserService(JdbcTemplate jdbc, IntegrationService integrationService, @Lazy SocialService socialService) {
         this.jdbc = jdbc;
         this.integrationService = integrationService;
+        this.socialService = socialService;
     }
 
     public UserDto findById(String id) {
@@ -272,6 +275,7 @@ public class UserService {
         }
         jdbc.update("update users set status = '已封禁', ban_reason = ?, ban_until = ? where id = ?",
                 reason.trim(), banUntil, userId);
+        notifyUserBan(userId, reason.trim(), banUntil.toString());
         log(actorId, "BAN_USER", "USER", userId, reason);
     }
 
@@ -279,6 +283,7 @@ public class UserService {
     public void unblock(String userId, String actorId) {
         if ("已注销".equals(findById(userId).getStatus())) throw new IllegalStateException("已注销账号不能解封");
         jdbc.update("update users set status = '正常', ban_reason = null, ban_until = null where id = ?", userId);
+        notifyUserUnblock(userId);
         log(actorId, "UNBLOCK_USER", "USER", userId, "");
     }
 
@@ -383,6 +388,19 @@ public class UserService {
 
     private String banMessage(String reason, String banUntil) {
         return "账号已被封禁：" + DbSupport.safe(reason, "未填写原因") + "；封禁至：" + DbSupport.safe(banUntil, "未设置期限");
+    }
+
+    private void notifyUserBan(String userId, String reason, String until) {
+        if (socialService == null) return;
+        String content = "您的账号已被管理员封禁。原因：" + DbSupport.safe(reason, "未填写原因")
+                + "；封禁至：" + DbSupport.safe(until, "未设置期限");
+        socialService.createNotification(userId, "账号封禁通知", "账号已被封禁", content, "user", userId);
+    }
+
+    private void notifyUserUnblock(String userId) {
+        if (socialService == null) return;
+        socialService.createNotification(userId, "账号解封通知", "账号已恢复正常",
+                "您的账号已被管理员解封，现在可以正常使用平台功能。", "user", userId);
     }
 
     private String emptyFilter(String value) {
