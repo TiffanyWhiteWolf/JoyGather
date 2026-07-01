@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { Bell, ClipboardCheck, LayoutDashboard, LogOut, Search, ShieldCheck, Users } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { onMounted, provide, ref, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { logout as apiLogout } from '@/lib/api'
+import { apiGet, logout as apiLogout } from '@/lib/api'
 
 const route = useRoute()
 const router = useRouter()
 const app = useAppStore()
 const query = ref('')
 const noticeOpen = ref(false)
+const pendingCount = ref(0)
 const nav = [
   { to: '/admin', label: '数据概览', icon: LayoutDashboard },
   { to: '/admin/reviews', label: '审核中心', icon: ClipboardCheck },
@@ -29,6 +30,19 @@ async function logout() {
   await router.push('/auth')
   app.showToast('管理员已退出登录')
 }
+
+async function fetchPendingCount() {
+  try {
+    const tasks = await apiGet<{status:string}[]>('/admin/reviews')
+    pendingCount.value = tasks.filter(t => t.status === '待审核').length
+  } catch { /* 静默失败，侧边栏保持显示 0 */ }
+}
+
+onMounted(fetchPendingCount)
+provide('refreshPendingCount', fetchPendingCount)
+watch(() => route.path, (path) => {
+  if (path === '/admin/reviews' || path.startsWith('/admin/reviews/')) fetchPendingCount()
+})
 </script>
 
 <template>
@@ -36,7 +50,7 @@ async function logout() {
     <aside class="admin-sidebar">
       <RouterLink class="brand admin-brand" to="/"><span class="brand-mark"><span></span><span></span><span></span></span><span>趣聚</span><small>运营台</small></RouterLink>
       <nav class="admin-nav">
-        <RouterLink v-for="item in nav" :key="item.to" :to="item.to" :class="{ active: route.path === item.to }"><component :is="item.icon" :size="19" />{{ item.label }}<span v-if="item.to === '/admin/reviews'" class="nav-count">12</span></RouterLink>
+        <RouterLink v-for="item in nav" :key="item.to" :to="item.to" :class="{ active: route.path === item.to }"><component :is="item.icon" :size="19" />{{ item.label }}<span v-if="item.to === '/admin/reviews' && pendingCount" class="nav-count">{{ pendingCount }}</span></RouterLink>
       </nav>
       <div class="admin-profile"><img src="https://i.pravatar.cc/80?img=11" alt="管理员" /><div><b>周晴</b><small>超级管理员</small></div></div>
       <button class="back-site admin-logout" @click="logout"><LogOut :size="16" />退出登录</button>
