@@ -70,6 +70,12 @@ public class ActivityController {
         return ApiResponse.success(activityService.findMyActivities(userId));
     }
 
+    @GetMapping("/joined")
+    public ApiResponse<List<ActivityDto>> joinedActivities(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        return ApiResponse.success(activityService.findJoinedActivities(userId));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<ActivityDto>> detail(@PathVariable String id) {
         return activityService.findById(id)
