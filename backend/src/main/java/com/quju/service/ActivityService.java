@@ -66,7 +66,10 @@ public class ActivityService {
     public List<ActivityDto> findAll(String keyword, String category, BigDecimal minLng, BigDecimal maxLng,
                                      BigDecimal minLat, BigDecimal maxLat, String sort) {
         List<ActivityDto> activities = jdbc.query(
-                "select * from activities where published_at is not null and status not in ('草稿','审核中','已下架') and visibility = 'PUBLIC' order by featured desc, published_at desc, created_at desc",
+                "select * from activities where published_at is not null "
+                        + "and status not in ('草稿','审核中','已下架','已结束') "
+                        + "and (end_at is null or end_at >= now()) "
+                        + "and visibility = 'PUBLIC' order by featured desc, published_at desc, created_at desc",
                 activityMapper());
         return filter(activities, keyword, category, null, minLng, maxLng, minLat, maxLat, sort);
     }
@@ -74,7 +77,10 @@ public class ActivityService {
     public List<ActivityDto> recommendations(List<String> interests, Integer limit) {
         List<ActivityDto> activities = jdbc.query(
                 "select * from activities "
-                        + "where published_at is not null and status not in ('草稿','审核中','已下架') and visibility = 'PUBLIC' "
+                        + "where published_at is not null "
+                        + "and status not in ('草稿','审核中','已下架','已结束') "
+                        + "and (end_at is null or end_at >= now()) "
+                        + "and visibility = 'PUBLIC' "
                         + "order by (1.0 * joined_count / case when capacity > 0 then capacity else 1 end) desc, "
                         + "joined_count desc, featured desc, published_at desc, created_at desc",
                 activityMapper());
@@ -103,7 +109,7 @@ public class ActivityService {
         List<String> categoryList = categories == null || categories.trim().isEmpty() ? Collections.<String>emptyList() : DbSupport.split(categories);
         for (ActivityDto item : result) {
             if (!categoryList.isEmpty() && !categoryList.contains(item.getCategory())) continue;
-            if (city != null && !city.trim().isEmpty() && !city.trim().replace("市", "").equals(item.getCity())) continue;
+            if (city != null && !city.trim().isEmpty() && item.getCity() != null && !city.trim().replace("市", "").equals(item.getCity())) continue;
             if ("免费".equals(fee) && item.getPrice().compareTo(BigDecimal.ZERO) > 0) continue;
             if ("付费".equals(fee) && item.getPrice().compareTo(BigDecimal.ZERO) <= 0) continue;
             if (distance != null && item.getDistance() != null && item.getDistance().compareTo(distance) > 0) continue;
@@ -133,6 +139,14 @@ public class ActivityService {
 
     public List<ActivityDto> findMyActivities(String userId) {
         return jdbc.query("select * from activities where organizer_id = ? and status <> '草稿' order by updated_at desc", activityMapper(), userId);
+    }
+
+    public List<ActivityDto> findJoinedActivities(String userId) {
+        return jdbc.query(
+            "select a.* from activities a inner join registrations r on r.activity_id = a.id " +
+            "where r.user_id = ? and r.status in ('已报名','候补中','已签到') and a.status <> '草稿' " +
+            "order by r.created_at desc",
+            activityMapper(), userId);
     }
 
     public Map<String, String> myRegistrationStatus(String userId) {
@@ -185,7 +199,8 @@ public class ActivityService {
         String id = DbSupport.id("act");
         IntegrationService.ModerationResult moderation = integrationService == null
                 ? localModeration(request)
-                : integrationService.moderateActivity(id, request.getTitle(), request.getSummary(), request.getTags(), request.getCapacity());
+                : integrationService.moderateActivity(id, request.getTitle(), request.getSummary(), request.getDescription(),
+                        request.getCategory(), request.getTags(), request.getSafetyNote(), request.getLocation(), request.getCapacity());
         String status = "LOW_RISK".equals(moderation.result) ? "报名中" : "审核中";
         jdbc.update("insert into activities (id,title,summary,description,category,cover,date_label,time_label,location,city,district,distance,longitude,latitude,price,capacity,joined_count,status,organizer_id,featured,safety_note,min_age,join_fields,published_at,team_id,visibility,ai_review_status,ai_risk_labels,submit_token) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,case when ? = '报名中' then now() else null end,?,?,?,?,?)",
                 id, request.getTitle(), request.getSummary(), DbSupport.safe(request.getDescription(), request.getSummary()),
@@ -198,7 +213,8 @@ public class ActivityService {
                 moderation.result, DbSupport.join(moderation.labels), request.getSubmitToken());
         applySchedule(id, request);
         replaceTags(id, request.getTags());
-        if (integrationService != null) integrationService.saveAiAudit(id, moderation, moderation.reason);
+        jdbc.update("update activities set review_reason = ? where id = ?", moderation.reason, id);
+        if (integrationService != null) integrationService.saveAiAudit(id, moderation);
         if ("审核中".equals(status)) createActivityReview(id, request, organizerId, moderation);
         return requireActivity(id);
     }
@@ -252,10 +268,12 @@ public class ActivityService {
         validateDraftForSubmit(draft);
         IntegrationService.ModerationResult moderation = integrationService == null
                 ? new IntegrationService.ModerationResult(draft.getCapacity() > 50 ? "REVIEW_REQUIRED" : "LOW_RISK", draft.getCapacity() > 50 ? "中" : "低", draft.getCapacity() > 50 ? "报名人数超过 50 人，转入人工审核" : "规则审核低风险", Collections.<String>emptyList())
-                : integrationService.moderateActivity(id, draft.getTitle(), draft.getSummary(), draft.getTags(), draft.getCapacity());
+                : integrationService.moderateActivity(id, draft.getTitle(), draft.getSummary(), draft.getDescription(),
+                        draft.getCategory(), draft.getTags(), draft.getSafetyNote(), draft.getLocation(), draft.getCapacity());
         String status = "LOW_RISK".equals(moderation.result) ? "报名中" : "审核中";
-        jdbc.update("update activities set status = ?, ai_review_status = ?, ai_risk_labels = ?, published_at = case when ? = '报名中' then now() else null end where id = ?", status, moderation.result, DbSupport.join(moderation.labels), status, id);
-        if (integrationService != null) integrationService.saveAiAudit(id, moderation, moderation.reason);
+        jdbc.update("update activities set status = ?, ai_review_status = ?, ai_risk_labels = ?, review_reason = ?, published_at = case when ? = '报名中' then now() else null end where id = ?",
+                status, moderation.result, DbSupport.join(moderation.labels), moderation.reason, status, id);
+        if (integrationService != null) integrationService.saveAiAudit(id, moderation);
         if ("审核中".equals(status)) {
             jdbc.update("insert into review_tasks (id,type,target_id,title,submitter,risk,reason,status) values (?,?,?,?,?,?,?,?)",
                     DbSupport.id("rv"), "活动审核", id, draft.getTitle(), draft.getOrganizer().getNickname(), moderation.risk, moderation.reason, "待审核");
@@ -762,6 +780,10 @@ public class ActivityService {
                 activity.setMinAge(rs.getInt("min_age"));
                 activity.setJoinFields(DbSupport.split(rs.getString("join_fields")));
                 activity.setOfflineReason(rs.getString("offline_reason"));
+                activity.setAiReviewStatus(rs.getString("ai_review_status"));
+                activity.setAiRiskLabels(DbSupport.split(rs.getString("ai_risk_labels")));
+                activity.setReviewDecision(rs.getString("review_decision"));
+                activity.setReviewReason(rs.getString("review_reason"));
                 activity.setPublishedAt(formatDateTime(rs.getTimestamp("published_at")));
                 activity.setUpdatedAt(formatDateTime(rs.getTimestamp("updated_at")));
                 activity.setTags(tagsFor(activity.getId()));
@@ -925,6 +947,7 @@ public class ActivityService {
         if (startAt == null || endAt == null || deadline == null) throw new IllegalStateException("活动开始、结束和报名截止时间不能为空");
         if (!endAt.isAfter(startAt)) throw new IllegalStateException("活动结束时间需要晚于开始时间");
         if (!startAt.isAfter(LocalDateTime.now())) throw new IllegalStateException("活动开始时间需要晚于当前时间");
+        if (!deadline.isAfter(LocalDateTime.now())) throw new IllegalStateException("报名截止时间需要晚于当前时间");
         if (deadline.isAfter(startAt)) throw new IllegalStateException("报名截止时间不能晚于活动开始时间");
     }
 
@@ -953,6 +976,7 @@ public class ActivityService {
         LocalDateTime deadline = LocalDateTime.parse(draft.getDeadline());
         if (!endAt.isAfter(startAt)) throw new IllegalStateException("活动结束时间需要晚于开始时间");
         if (!startAt.isAfter(LocalDateTime.now())) throw new IllegalStateException("活动开始时间需要晚于当前时间");
+        if (!deadline.isAfter(LocalDateTime.now())) throw new IllegalStateException("报名截止时间需要晚于当前时间");
         if (deadline.isAfter(startAt)) throw new IllegalStateException("报名截止时间不能晚于活动开始时间");
     }
 

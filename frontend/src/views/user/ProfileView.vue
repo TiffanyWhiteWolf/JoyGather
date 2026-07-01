@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Building2, CalendarDays, Camera, CheckCircle2, ChevronRight, Copy, FileCheck, FileText, Heart, MapPin, Navigation, QrCode, Send, Settings, ShieldAlert, Star, Trash2, Users, X } from 'lucide-vue-next'
+import { ArrowUpDown, Building2, CalendarDays, Camera, CheckCircle2, ChevronRight, Copy, FileCheck, FileText, Heart, MapPin, Navigation, QrCode, ScanLine, Search, Send, Settings, ShieldAlert, Star, Trash2, Users, X } from 'lucide-vue-next'
 import QRCode from 'qrcode'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -49,16 +49,79 @@ interface RegistrationManagementRow {
 const profileTabs = ['我的活动', '商家中心', '动态', '收藏', '活动总结'] as const
 type ProfileTab = typeof profileTabs[number]
 
+const activitySubTabs = ['我创建的', '我参与的'] as const
+type ActivitySubTab = typeof activitySubTabs[number]
+
 const router = useRouter()
 const app = useAppStore()
 const currentUser = ref<User | null>(null)
 const activities = ref<Activity[]>([])
+const joinedActivities = ref<Activity[]>([])
+const activitySubTab = ref<ActivitySubTab>('我创建的')
+
+const activitySearch = ref('')
+const activitySort = ref<'newest' | 'oldest' | 'name'>('newest')
+const joinedStatusFilter = ref<'全部' | '报名中' | '签到中' | '活动中' | '已结束'>('全部')
+const createdStatusFilter = ref<'全部' | '报名中' | '签到中' | '活动中' | '已结束'>('全部')
+
+const createdStatusOptions = ['全部', '报名中', '签到中', '活动中', '已结束'] as const
+const joinedStatusOptions = ['全部', '报名中', '签到中', '活动中', '已结束'] as const
+
+function statusMatch(activity: Activity, filter: string) {
+  if (filter === '全部') return true
+  if (filter === '签到中') return activity.status === '已截止' || activity.status === '进行中'
+  if (filter === '活动中') return activity.status === '进行中'
+  return activity.status === filter
+}
+
+const allTags = computed(() => {
+  const tags = new Set<string>()
+  activities.value.forEach(a => a.tags.forEach(t => tags.add(t)))
+  joinedActivities.value.forEach(a => a.tags.forEach(t => tags.add(t)))
+  return Array.from(tags).sort()
+})
+
+function matchesSearch(activity: Activity) {
+  const q = activitySearch.value.trim().toLowerCase()
+  if (!q) return true
+  return activity.title.toLowerCase().includes(q)
+    || activity.tags.some(t => t.toLowerCase().includes(q))
+    || activity.location.toLowerCase().includes(q)
+}
+
+const filteredCreated = computed(() => {
+  let list = activities.value.filter(matchesSearch)
+  if (createdStatusFilter.value !== '全部') {
+    list = list.filter(a => statusMatch(a, createdStatusFilter.value))
+  }
+  return list.sort((a, b) => {
+    if (activitySort.value === 'name') return a.title.localeCompare(b.title, 'zh')
+    const da = new Date(a.startAt || a.updatedAt || '').getTime()
+    const db = new Date(b.startAt || b.updatedAt || '').getTime()
+    return activitySort.value === 'oldest' ? da - db : db - da
+  })
+})
+
+const filteredJoined = computed(() => {
+  let list = joinedActivities.value.filter(matchesSearch)
+  if (joinedStatusFilter.value !== '全部') {
+    list = list.filter(a => statusMatch(a, joinedStatusFilter.value))
+  }
+  return list.sort((a, b) => {
+    if (activitySort.value === 'name') return a.title.localeCompare(b.title, 'zh')
+    const da = new Date(a.startAt || '').getTime()
+    const db = new Date(b.startAt || '').getTime()
+    return activitySort.value === 'oldest' ? da - db : db - da
+  })
+})
 const editing = ref(false)
 const activeTab = ref<ProfileTab>('我的活动')
 const saving = ref(false)
 const uploadingAvatar = ref(false)
+const uploadingLicense = ref(false)
 const error = ref('')
 const avatarInput = ref<HTMLInputElement | null>(null)
+const licenseInput = ref<HTMLInputElement | null>(null)
 const merchantApplications = ref<MerchantApplication[]>([])
 const merchantSaving = ref(false)
 const merchantSubmitting = ref(false)
@@ -99,6 +162,10 @@ const birthdayDisplay = computed(() => {
   return `${year}年${month}月${day}日`
 })
 const latestMerchantApplication = computed(() => merchantApplications.value[0] ?? null)
+const licenseIsImage = computed(() => {
+  const name = merchantForm.licenseName || merchantForm.licenseUrl || ''
+  return /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(name)
+})
 const customInterestTags = computed(() => parseInterestTags().filter(tag => !suggestedInterests.includes(tag)))
 const checkedInCount = computed(() => checkinRows.value.filter(item => item.status === '已签到').length)
 const registeredCount = computed(() => checkinRows.value.filter(item => item.status === '已报名' || item.status === '已签到').length)
@@ -132,10 +199,11 @@ onMounted(async () => {
       merchantName: user.merchantName || latestApplication?.merchantName || '',
       merchantNickname: user.merchantNickname || user.merchantName || '',
       merchantFields: (user.merchantFields || []).join('、'),
-      licenseName: '',
-      licenseUrl: '',
+      licenseName: latestApplication?.licenseName || '',
+      licenseUrl: latestApplication?.licenseUrl || '',
     })
     activities.value = rows
+    apiGet<Activity[]>('/activities/joined').then(list => { joinedActivities.value = list }).catch((err) => { console.error('加载参与的活动失败:', err) })
   } catch {
     router.push('/auth')
   }
@@ -348,6 +416,26 @@ async function uploadAvatar(event: Event) {
   }
 }
 
+async function uploadLicenseFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  merchantError.value = ''
+  uploadingLicense.value = true
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const uploaded = await apiUpload<FileResponse>('/files/upload', form)
+    merchantForm.licenseName = uploaded.originalName
+    merchantForm.licenseUrl = uploaded.url
+  } catch (err) {
+    merchantError.value = err instanceof Error ? err.message : '营业凭证上传失败'
+  } finally {
+    uploadingLicense.value = false
+    input.value = ''
+  }
+}
+
 function changeCover() {
   error.value = ''
   window.alert('封面图上传暂未开放，请通过头像上传更新个人展示图片。')
@@ -395,6 +483,7 @@ async function cancelAccount() {
 <template>
   <div v-if="currentUser" class="container profile-page">
     <input ref="avatarInput" class="hidden-file" type="file" accept="image/*" @change="uploadAvatar" />
+    <input ref="licenseInput" class="hidden-file" type="file" accept="image/*,.pdf" @change="uploadLicenseFile" />
 
     <section class="profile-cover">
       <div class="profile-pattern"></div>
@@ -471,16 +560,61 @@ async function cancelAccount() {
         </div>
 
         <template v-if="activeTab==='我的活动'">
-          <div v-if="activities.length" class="activity-grid managed-activities">
-            <div v-for="activity in activities" :key="activity.id" class="managed-activity">
-              <ActivityCard :activity="activity" />
-              <div class="activity-tools">
-                <span>{{ activity.status }}</span>
-                <button @click="openCheckinManagement(activity)"><QrCode :size="15" />签到管理</button>
+          <div class="activity-subtabs">
+            <button v-for="sub in activitySubTabs" :key="sub" :class="{ active: activitySubTab === sub }" @click="activitySubTab = sub">
+              {{ sub }}
+              <span v-if="sub === '我创建的'">({{ filteredCreated.length }})</span>
+              <span v-else>({{ filteredJoined.length }})</span>
+            </button>
+          </div>
+
+          <!-- 筛选工具栏 -->
+          <div class="activity-toolbar">
+            <label class="search-label"><Search :size="15" /><input v-model="activitySearch" placeholder="搜索活动名称、标签或地点" /></label>
+            <select v-model="activitySort" class="sort-select">
+              <option value="newest">按时间从新到旧</option>
+              <option value="oldest">按时间从旧到新</option>
+              <option value="name">按名称排序</option>
+            </select>
+          </div>
+
+          <template v-if="activitySubTab === '我创建的'">
+            <div class="status-filter-tabs">
+              <button v-for="opt in createdStatusOptions" :key="opt" :class="{ active: createdStatusFilter === opt }" @click="createdStatusFilter = opt">
+                {{ opt }}
+                <span v-if="opt !== '全部'">({{ activities.filter(a => statusMatch(a, opt)).length }})</span>
+              </button>
+            </div>
+            <div v-if="filteredCreated.length" class="activity-grid managed-activities">
+              <div v-for="activity in filteredCreated" :key="activity.id" class="managed-activity">
+                <ActivityCard :activity="activity" show-status>
+                  <template #actions>
+                    <button class="card-action-btn" @click="openCheckinManagement(activity)"><QrCode :size="14" />签到管理</button>
+                  </template>
+                </ActivityCard>
               </div>
             </div>
-          </div>
-          <div v-else class="empty-state">你还没有发布活动。</div>
+            <div v-else class="empty-state">{{ activitySearch ? '没有匹配的活动' : '你还没有发布活动。' }}</div>
+          </template>
+
+          <template v-else>
+            <div class="status-filter-tabs">
+              <button v-for="opt in joinedStatusOptions" :key="opt" :class="{ active: joinedStatusFilter === opt }" @click="joinedStatusFilter = opt">
+                {{ opt }}
+                <span v-if="opt !== '全部'">({{ joinedActivities.filter(a => statusMatch(a, opt)).length }})</span>
+              </button>
+            </div>
+            <div v-if="filteredJoined.length" class="activity-grid managed-activities">
+              <div v-for="activity in filteredJoined" :key="activity.id" class="managed-activity">
+                <ActivityCard :activity="activity" show-status>
+                  <template v-if="activity.status === '进行中' || activity.status === '已截止'" #actions>
+                    <button class="card-action-btn checkin" @click="router.push('/check-in')"><ScanLine :size="14" />扫码签到</button>
+                  </template>
+                </ActivityCard>
+              </div>
+            </div>
+            <div v-else class="empty-state">{{ activitySearch ? '没有匹配的活动' : '你还没有参与任何活动。' }}</div>
+          </template>
         </template>
 
         <template v-else-if="activeTab==='商家中心'">
@@ -489,7 +623,6 @@ async function cancelAccount() {
               <div>
                 <span class="eyebrow">MERCHANT</span>
                 <h2>商家认证与资料管理</h2>
-                <p>商家资料与个人资料分开维护；提交认证后由管理员在审核中心处理。</p>
               </div>
               <i>{{ merchantStatusText }}</i>
             </div>
@@ -511,7 +644,17 @@ async function cancelAccount() {
               </div>
               <div class="merchant-form-card">
                 <h3>认证申请</h3>
-                <label>营业凭证文件<input class="input" type="file" accept="image/*,.pdf" @change="merchantForm.licenseName=($event.target as HTMLInputElement).files?.[0]?.name||''" /></label>
+                <label>营业凭证文件
+                  <div class="license-upload-row">
+                    <button type="button" class="btn btn-outline btn-sm" :disabled="uploadingLicense" @click="licenseInput?.click()">
+                      <FileCheck :size="15" />{{ uploadingLicense ? '上传中...' : (merchantForm.licenseName || '选择文件并上传') }}
+                    </button>
+                  </div>
+                  <div v-if="merchantForm.licenseUrl" class="license-preview">
+                    <img v-if="licenseIsImage" :src="merchantForm.licenseUrl" alt="营业执照预览" />
+                    <div v-else class="license-file-icon"><FileText :size="28" /><span>{{ merchantForm.licenseName }}</span></div>
+                  </div>
+                </label>
                 <label>凭证 URL<input v-model.trim="merchantForm.licenseUrl" class="input" placeholder="也可粘贴营业执照或授权书链接" /></label>
                 <p v-if="latestMerchantApplication" class="merchant-status">最近申请：{{ latestMerchantApplication.status }}<span v-if="latestMerchantApplication.reason"> · {{ latestMerchantApplication.reason }}</span></p>
                 <p v-else class="merchant-status">尚未提交商家认证申请。</p>
@@ -641,6 +784,22 @@ async function cancelAccount() {
 .profile-tabs{display:flex;gap:22px;margin-bottom:18px;border-bottom:1px solid var(--color-line)}
 .profile-tabs button{padding:12px 2px;border:0;border-bottom:2px solid transparent;background:none;color:var(--color-ink-soft);font-weight:700;white-space:nowrap}
 .profile-tabs button.active{border-color:var(--color-primary);color:var(--color-ink)}
+.activity-subtabs{display:flex;gap:8px;margin-bottom:14px}
+.activity-subtabs button{padding:8px 14px;border:1px solid var(--color-line);border-radius:var(--radius-pill);background:#fff;color:var(--color-ink-soft);font-size:12px;font-weight:700}
+.activity-subtabs button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary)}
+.activity-subtabs button span{font-weight:400;opacity:.7}
+.activity-toolbar{display:flex;gap:10px;margin-bottom:12px}
+.search-label{flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--color-line);border-radius:10px;background:#fff}
+.search-label input{border:0;outline:0;flex:1;font-size:12px}
+.sort-select{padding:10px 12px;border:1px solid var(--color-line);border-radius:10px;background:#fff;font-size:12px;color:var(--color-ink);outline:none}
+.status-filter-tabs{display:flex;gap:6px;margin-bottom:14px}
+.status-filter-tabs button{padding:6px 12px;border:1px solid var(--color-line);border-radius:var(--radius-pill);background:#fff;color:var(--color-ink-soft);font-size:11px;font-weight:700;transition:.15s}
+.status-filter-tabs button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary)}
+.status-filter-tabs button span{font-weight:400;opacity:.7}
+.card-action-btn{padding:6px 10px;border:0;border-radius:7px;background:var(--color-primary-soft);color:var(--color-primary);display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;cursor:pointer;transition:all .15s}
+.card-action-btn:hover{background:var(--color-primary);color:#fff}
+.card-action-btn.checkin{background:var(--color-mint-soft);color:var(--color-mint)}
+.card-action-btn.checkin:hover{background:var(--color-mint);color:#fff}
 .profile-grid .activity-grid{grid-template-columns:1fr 1fr}
 .side-card{margin-bottom:15px;padding:20px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}
 .side-card h3{font-size:14px}
@@ -683,9 +842,6 @@ async function cancelAccount() {
 .empty-state{padding:36px;background:#fff;border:1px dashed var(--color-line);border-radius:var(--radius-md);color:var(--color-ink-soft);text-align:center}
 .empty-state.small{padding:20px;font-size:11px}
 .managed-activity{display:grid;gap:8px}
-.activity-tools{padding:10px;border:1px solid var(--color-line);border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:8px}
-.activity-tools span{padding:5px 7px;border-radius:6px;background:var(--color-mint-soft);color:var(--color-mint);font-size:10px;font-weight:800}
-.activity-tools button{border:0;background:none;color:var(--color-primary);display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800}
 .merchant-panel{padding:22px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}
 .merchant-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
 .merchant-head h2{margin:4px 0 6px}
@@ -695,6 +851,13 @@ async function cancelAccount() {
 .merchant-form-card{padding:16px;border:1px solid var(--color-line);border-radius:12px;background:var(--color-bg)}
 .merchant-form-card h3{margin:0 0 14px}
 .merchant-form-card label{display:flex;flex-direction:column;gap:6px;margin-top:11px;font-size:11px;font-weight:800}
+.license-upload-row{display:flex;align-items:center;gap:10px}
+.license-upload-row .btn{white-space:nowrap}
+.license-preview{margin-top:10px;padding:10px;border:1px solid var(--color-line);border-radius:8px;background:#fff}
+.license-preview img{max-width:100%;max-height:200px;border-radius:6px;object-fit:contain;display:block}
+.license-file-icon{display:flex;align-items:center;gap:10px;padding:12px;background:var(--color-bg);border-radius:6px}
+.license-file-icon svg{color:var(--color-primary);flex-shrink:0}
+.license-file-icon span{font-size:12px;color:var(--color-ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .merchant-form-card .btn{width:100%;margin-top:14px;justify-content:center}
 .merchant-status{min-height:36px;margin:12px 0 0!important;color:var(--color-ink-soft);font-size:11px!important}
 .merchant-presets{margin-bottom:2px}
@@ -767,8 +930,6 @@ async function cancelAccount() {
   .profile-grid aside{grid-template-columns:1fr}
   .merchant-head{flex-direction:column}
   .profile-tabs{gap:12px;overflow:auto}
-  .activity-tools{align-items:flex-start;flex-direction:column}
-  .activity-tools button{width:100%;justify-content:center;padding:8px;border:1px solid var(--color-line);border-radius:8px;background:#fff}
   .checkin-summary{grid-template-columns:1fr}
   .registration-row{grid-template-columns:40px 1fr}
   .registration-row .status-tag{grid-column:2}

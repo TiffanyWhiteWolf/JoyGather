@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CalendarDays, Check, ChevronLeft, Clock, MapPin, ShieldAlert, Users, X } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { computed, inject, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { apiGet, apiPost } from '@/lib/api'
@@ -8,9 +8,11 @@ import type { Activity } from '@/types'
 
 const route = useRoute()
 const app = useAppStore()
+const refreshPendingCount = inject<() => void>('refreshPendingCount', () => {})
 const rejecting = ref(false)
 const reason = ref('')
 const reasonError = ref('')
+const submitting = ref(false)
 
 const fallbackActivity: Activity = {
   id: '', title: '加载中', summary: '', description: '', category: '城市探索',
@@ -31,9 +33,16 @@ async function loadActivity() {
 }
 
 async function approve() {
-  await apiPost<void>(`/admin/reviews/${route.query.reviewId}/approve`, { handlerId: 'admin' })
-  app.showToast('审核已通过，活动已发布')
-  await loadActivity()
+  if (submitting.value) return
+  submitting.value = true
+  try {
+    await apiPost<void>(`/admin/reviews/${route.query.reviewId}/approve`, { handlerId: 'admin' })
+    app.showToast('审核已通过，活动已发布')
+    await loadActivity()
+    refreshPendingCount()
+  } finally {
+    submitting.value = false
+  }
 }
 
 function openReject() {
@@ -47,10 +56,17 @@ async function confirmReject() {
     reasonError.value = '驳回时必须填写原因。'
     return
   }
-  await apiPost<void>(`/admin/reviews/${route.query.reviewId}/reject`, { reason: reason.value, handlerId: 'admin' })
-  rejecting.value = false
-  app.showToast('已驳回并记录原因')
-  await loadActivity()
+  if (submitting.value) return
+  submitting.value = true
+  try {
+    await apiPost<void>(`/admin/reviews/${route.query.reviewId}/reject`, { reason: reason.value, handlerId: 'admin' })
+    app.showToast('已驳回并记录原因')
+    await loadActivity()
+    refreshPendingCount()
+    rejecting.value = false
+  } finally {
+    submitting.value = false
+  }
 }
 
 onMounted(loadActivity)
@@ -115,12 +131,15 @@ onMounted(loadActivity)
           <div class="capacity">
             <div><span>报名进度</span><b>{{ activity.joined }} / {{ activity.capacity }}</b></div>
           </div>
+          <div v-if="activity.minAge" class="age-restriction">
+            <ShieldAlert :size="16" /><span>年龄限制：<b>{{ activity.minAge }} 岁以上</b></span>
+          </div>
 
           <div v-if="pendingReview && route.query.reviewId">
-            <button v-if="!rejecting" class="btn btn-primary join-btn" @click="approve">
+            <button v-if="!rejecting" class="btn btn-primary join-btn" :disabled="submitting" @click="approve">
               <Check :size="17" />通过审核
             </button>
-            <button v-if="!rejecting" class="btn action-reject-btn" @click="openReject">
+            <button v-if="!rejecting" class="btn action-reject-btn" :disabled="submitting" @click="openReject">
               <X :size="17" />驳回
             </button>
             <div v-if="rejecting" class="reject-form">
@@ -137,6 +156,9 @@ onMounted(loadActivity)
           </div>
           <div v-else-if="activity.status === '审核中'">
             <div class="safe-note"><ShieldAlert :size="18" /><span><b>待审核</b><small>该活动正在等待人工审核</small></span></div>
+          </div>
+          <div v-else-if="route.query.reviewId" class="review-result">
+            <Check :size="18" /><span><b>审核已完成</b><small>当前状态：{{ activity.status }}</small></span>
           </div>
 
           <div class="safe-note"><ShieldAlert :size="18" /><span><b>管理视图</b><small>你正在以管理员身份查看此活动</small></span></div>
@@ -184,11 +206,12 @@ onMounted(loadActivity)
 .capacity{margin:18px 0}
 .capacity>div:first-child{display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px}
 .capacity b{font-size:14px}
-.capacity small{display:block;margin-top:8px;color:var(--color-ink-soft);font-size:10px;line-height:1.6}
+.age-restriction{display:flex;align-items:center;gap:8px;margin:14px 0;padding:10px 14px;border-radius:8px;background:var(--color-mint-soft);color:#168b7d;font-size:12px}.age-restriction b{font-size:13px}
 .join-btn{width:100%;margin-bottom:10px}
 .action-reject-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;padding:13px;border:1px solid var(--color-danger);border-radius:10px;background:#ffeaed;color:var(--color-danger);font-size:13px;font-weight:800;cursor:pointer}
 .safe-note{padding:14px;border-radius:10px;background:var(--color-mint-soft);display:flex;gap:10px;margin-top:14px;color:#168b7d}
 .safe-note small{display:block;font-size:10px;font-weight:400}
+.review-result{padding:14px;border-radius:10px;background:#e8f5e9;display:flex;gap:10px;color:#2e7d32}.review-result small{display:block;font-size:10px;font-weight:400;margin-top:2px}
 .reject-form{margin-top:10px}
 .reject-form label span{display:block;margin-bottom:5px;font-size:11px;font-weight:800}
 .reject-form textarea{width:100%;padding:10px;border:1px solid var(--color-line);border-radius:8px;resize:vertical;font-size:12px}

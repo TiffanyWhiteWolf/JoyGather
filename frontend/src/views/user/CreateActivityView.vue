@@ -14,6 +14,7 @@ const router = useRouter()
 const AI_PLAN_STORAGE_KEY = 'quju:ai-plan'
 const step = ref(1)
 const submitted = ref(false)
+const submittedActivity = ref<Activity | null>(null)
 const submitError = ref('')
 const saving = ref(false)
 const submitting = ref(false)
@@ -49,6 +50,16 @@ const form = reactive<ActivityDraft>({
   deadline: '', price: 0, minAge: 16, safetyNote: '', joinFields: ['真实姓名', '手机号码'], updatedAt: '',
 })
 const reviewMode = computed(() => form.capacity > 50 ? '人工审核' : 'AI 自动审核')
+const submitResultTitle = computed(() => {
+  if (submittedActivity.value?.status === '报名中') return 'AI 审核通过，活动已发布'
+  if (submittedActivity.value?.aiReviewStatus === 'ERROR') return 'AI 服务暂时异常，已转人工审核'
+  if (submittedActivity.value?.aiReviewStatus === 'INDETERMINATE') return 'AI 暂无法确定，已转人工审核'
+  return '检测到需要复核，已进入人工审核'
+})
+const submitResultDescription = computed(() => submittedActivity.value?.reviewReason
+  || (submittedActivity.value?.status === '报名中'
+    ? '内容安全检查未发现风险，活动已经进入报名阶段。'
+    : '运营人员将在审核中心复核内容，审核完成后会更新活动状态。'))
 
 interface ActivityRequest {
   title: string
@@ -84,6 +95,8 @@ type FieldErrorKey =
   | 'endTime'
   | 'location'
   | 'capacity'
+  | 'price'
+  | 'minAge'
   | 'safetyNote'
 
 const fieldErrors = reactive<Record<FieldErrorKey, string>>({
@@ -96,6 +109,8 @@ const fieldErrors = reactive<Record<FieldErrorKey, string>>({
   endTime: '',
   location: '',
   capacity: '',
+  price: '',
+  minAge: '',
   safetyNote: '',
 })
 
@@ -103,6 +118,27 @@ function clearFieldErrors() {
   (Object.keys(fieldErrors) as FieldErrorKey[]).forEach((key) => {
     fieldErrors[key] = ''
   })
+}
+
+function validatePricingAndAge() {
+  fieldErrors.price = ''
+  fieldErrors.minAge = ''
+
+  if (form.price === null || form.price === undefined || Number.isNaN(Number(form.price))) {
+    fieldErrors.price = '请输入活动费用。'
+  } else if (Number(form.price) < 0) {
+    fieldErrors.price = '活动费用不能为负数。'
+  } else if (!/^\d+(\.\d{1,2})?$/.test(String(form.price).trim())) {
+    fieldErrors.price = '活动费用最多保留两位小数。'
+  }
+
+  if (form.minAge === null || form.minAge === undefined || String(form.minAge).trim() === '') {
+    fieldErrors.minAge = '请输入最低年龄。'
+  } else if (!Number.isInteger(Number(form.minAge))) {
+    fieldErrors.minAge = '最低年龄必须是整数。'
+  } else if (Number(form.minAge) < 0) {
+    fieldErrors.minAge = '最低年龄不能为负数。'
+  }
 }
 
 function useTemplate(index: number) {
@@ -202,14 +238,28 @@ function validateCurrentStep() {
     if (form.date && form.startTime && form.deadline && new Date(form.deadline).getTime() > new Date(`${form.date}T${form.startTime}:00`).getTime()) {
       fieldErrors.deadline = '报名截止时间不能晚于活动开始时间。'
     }
+    if (form.deadline && new Date(form.deadline).getTime() <= Date.now()) {
+      fieldErrors.deadline = '报名截止时间需要晚于当前时间。'
+    }
   }
 
   if (step.value === 3) {
     if (!Number.isInteger(form.capacity) || form.capacity < 2) {
       fieldErrors.capacity = '人数上限必须为大于等于 2 的整数。'
+    } else if (form.capacity > 500) {
+      fieldErrors.capacity = '人数上限不能超过 500 人。'
+    }
+    validatePricingAndAge()
+    if (!fieldErrors.price && Number(form.price) > 9999) {
+      fieldErrors.price = '活动费用不能超过 9999 元。'
+    }
+    if (!fieldErrors.minAge && Number(form.minAge) > 100) {
+      fieldErrors.minAge = '最低年龄不能超过 100 岁。'
     }
     if (!form.safetyNote.trim()) {
       fieldErrors.safetyNote = '请补充安全须知。'
+    } else if (form.safetyNote.length > 300) {
+      fieldErrors.safetyNote = '安全须知不能超过 300 字。'
     }
   }
 
@@ -264,7 +314,7 @@ async function next() {
   try {
     const saved = await persistDraft(false)
     if (!saved || !persistedDraftId.value) return
-    await apiPost<Activity>(`/activities/${persistedDraftId.value}/submit`, {})
+    submittedActivity.value = await apiPost<Activity>(`/activities/${persistedDraftId.value}/submit`, {})
     app.clearDraft()
     await app.refreshUserState()
     submitted.value = true
@@ -407,7 +457,7 @@ onMounted(async () => {
     <div class="create-head"><RouterLink :to="persistedDraftId ? '/drafts' : '/'"><ChevronLeft :size="17" />退出编辑</RouterLink><div><span>草稿：{{ savedAt }}</span><button class="btn btn-outline btn-sm" :disabled="saving || submitting" @click="save"><Save :size="16" />{{ saving ? '保存中' : '保存草稿' }}</button></div></div>
     <div class="stepper"><button v-for="(name,i) in ['基础信息','时间地点','参与设置','预览提交']" :key="name" :class="{active:step>=i+1}" @click="step=i+1"><span><Check v-if="step>i+1" :size="13" /><template v-else>{{ i+1 }}</template></span><b>{{ name }}</b></button></div>
 
-    <div v-if="submitted" class="submit-result panel"><span><ShieldCheck :size="34" /></span><h1>{{ reviewMode === '人工审核' ? '已进入人工审核' : '活动发布成功' }}</h1><p>{{ reviewMode === '人工审核' ? '报名人数超过 50 人，已按规则转交运营人员审核。' : '内容安全检查未发现风险，活动已经进入报名阶段。' }}</p><div><button class="btn btn-outline" @click="startNewActivity">再创建一场</button><button class="btn btn-primary" @click="router.push('/profile')">查看活动管理</button></div></div>
+    <div v-if="submitted" class="submit-result panel"><span><ShieldCheck :size="34" /></span><h1>{{ submitResultTitle }}</h1><p>{{ submitResultDescription }}</p><div v-if="submittedActivity?.aiRiskLabels?.length" class="audit-labels"><span v-for="label in submittedActivity.aiRiskLabels" :key="label">{{ label }}</span></div><div><button class="btn btn-outline" @click="startNewActivity">再创建一场</button><button class="btn btn-primary" @click="router.push('/profile')">查看活动管理</button></div></div>
 
     <div v-else class="create-layout">
       <section class="panel">
@@ -430,10 +480,10 @@ onMounted(async () => {
         </template>
 
         <template v-else-if="step===3">
-          <div class="form-grid"><div class="input-group"><label>人数上限 *</label><input v-model.number="form.capacity" class="input" type="number" min="2" max="500" step="1" /><p v-if="fieldErrors.capacity" class="field-error">{{ fieldErrors.capacity }}</p></div><div class="input-group"><label>活动费用（元）</label><input v-model.number="form.price" class="input" type="number" min="0" /></div></div>
-          <div class="form-grid"><div class="input-group"><label>最低年龄</label><input v-model.number="form.minAge" class="input" type="number" min="0" max="100" /></div><div class="input-group"><label>审核方式</label><div class="review-mode"><ShieldCheck :size="18" /><span><b>{{ reviewMode }}</b><small>{{ form.capacity > 50 ? '超过 50 人按规则转人工' : '提交后进行内容安全检查' }}</small></span></div></div></div>
+          <div class="form-grid"><div class="input-group"><label>人数上限 *</label><input v-model.number="form.capacity" class="input" type="number" min="2" max="500" step="1" /><small>范围 2 - 500 人</small><p v-if="fieldErrors.capacity" class="field-error">{{ fieldErrors.capacity }}</p></div><div class="input-group"><label>活动费用（元）</label><input v-model.number="form.price" class="input" type="number" min="0" max="9999" step="0.01" @input="validatePricingAndAge" @blur="validatePricingAndAge" /><small>范围 0 - 9999 元，最多两位小数</small><p v-if="fieldErrors.price" class="field-error">{{ fieldErrors.price }}</p></div></div>
+          <div class="form-grid"><div class="input-group"><label>最低年龄</label><input v-model.number="form.minAge" class="input" type="number" min="0" max="100" step="1" @input="validatePricingAndAge" @blur="validatePricingAndAge" /><small>范围 0 - 100 岁，必须是整数</small><p v-if="fieldErrors.minAge" class="field-error">{{ fieldErrors.minAge }}</p></div><div class="input-group"><label>审核方式</label><div class="review-mode"><ShieldCheck :size="18" /><span><b>{{ reviewMode }}</b><small>{{ form.capacity > 50 ? '超过 50 人按规则转人工' : '提交后进行内容安全检查' }}</small></span></div></div></div>
           <div class="input-group"><label>报名信息</label><div class="field-checks"><button v-for="item in ['真实姓名','手机号码','紧急联系人','身份证号']" :key="item" :class="{active:form.joinFields.includes(item)}" @click="toggleField(item)"><Check :size="14" />{{ item }}</button></div></div>
-          <div class="input-group"><label>安全须知 *</label><textarea v-model.trim="form.safetyNote" class="textarea" placeholder="装备、天气、医疗、紧急联系人等必要说明"></textarea><p v-if="fieldErrors.safetyNote" class="field-error">{{ fieldErrors.safetyNote }}</p></div>
+          <div class="input-group"><label>安全须知 *</label><textarea v-model.trim="form.safetyNote" class="textarea" maxlength="300" placeholder="装备、天气、医疗、紧急联系人等必要说明"></textarea><small>{{ form.safetyNote.length }} / 300</small><p v-if="fieldErrors.safetyNote" class="field-error">{{ fieldErrors.safetyNote }}</p></div>
         </template>
 
         <template v-else>
@@ -442,7 +492,8 @@ onMounted(async () => {
         </template>
 
         <p v-if="submitError" class="form-error">{{ submitError }}</p>
-        <div class="form-actions"><button v-if="step>1" class="btn btn-outline" :disabled="saving || submitting" @click="step--">上一步</button><button class="btn btn-primary" :disabled="saving || submitting" @click="next">{{ submitting ? '提交中' : saving ? '保存中' : step===4 ? '提交审核' : '保存并继续' }}</button></div>
+        <div v-if="submitting" class="audit-progress"><ShieldCheck :size="18" /><span><b>AI 内容安全审核中</b><small>正在检查活动名称、简介、标签和安全信息，请稍候。</small></span></div>
+        <div class="form-actions"><button v-if="step>1" class="btn btn-outline" :disabled="saving || submitting" @click="step--">上一步</button><button class="btn btn-primary" :disabled="saving || submitting" @click="next">{{ submitting ? 'AI 审核中…' : saving ? '保存中' : step===4 ? '提交审核' : '保存并继续' }}</button></div>
       </section>
       <aside><div class="ai-helper"><Sparkles /><h3>没想好怎么写？</h3><p>AI 可以生成可继续修改的标题、亮点与活动流程。</p><RouterLink to="/ai-planner">让 AI 帮我策划 →</RouterLink></div><div class="tips"><b>发布前小提示</b><p>地点要让参与者清楚找到</p><p>截止时间早于活动开始</p><p>户外活动写明安全须知</p><p>超过 50 人将人工审核</p></div></aside>
     </div>
@@ -450,7 +501,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.create-page{padding:26px 0 70px}.create-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px}.create-head>a{display:flex;align-items:center;gap:5px;color:var(--color-ink-soft);font-size:13px}.create-head>div{display:flex;align-items:center;gap:12px}.create-head span{color:var(--color-ink-soft);font-size:10px}.stepper{display:flex;justify-content:center;margin-bottom:30px}.stepper button{position:relative;width:150px;border:0;background:none;display:flex;align-items:center;gap:8px;color:#aaa;font-size:11px;cursor:pointer}.stepper button:not(:last-child):after{content:'';position:absolute;right:8px;width:35px;height:1px;background:var(--color-line)}.stepper span{width:26px;height:26px;border-radius:50%;background:#ddd;display:grid;place-items:center}.stepper .active{color:var(--color-ink)}.stepper .active span{background:var(--color-primary);color:#fff}.create-layout{display:grid;grid-template-columns:1fr 280px;gap:20px;align-items:start}.panel{padding:36px}.form-title h1{margin:3px 0 8px;font-size:29px}.form-title p{color:var(--color-ink-soft)}.input-group{margin:18px 0}.input-group small{margin-top:4px;text-align:right;color:var(--color-ink-soft);font-size:9px}.templates{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:22px 0}.templates button{padding:12px;border:1px solid var(--color-line);border-radius:10px;background:var(--color-bg);display:flex;align-items:center;gap:8px;text-align:left;cursor:pointer}.templates svg{color:var(--color-primary)}.templates span{display:flex;flex-direction:column}.templates b{font-size:11px}.templates small{margin-top:3px;color:var(--color-ink-soft);font-size:8px}.map-picker{padding:18px;border:1px dashed var(--color-primary);border-radius:13px;background:var(--color-primary-soft);display:flex;align-items:center;gap:12px}.map-picker>svg{color:var(--color-primary)}.map-picker div{flex:1}.map-picker b{font-size:12px}.map-picker p{margin:4px 0 0;color:var(--color-ink-soft);font-size:10px}.map-picker button{border:0;background:#fff;border-radius:8px;padding:8px;font-size:9px;font-weight:700}.review-mode{min-height:47px;padding:9px 12px;border-radius:10px;background:var(--color-mint-soft);display:flex;align-items:center;gap:8px;color:var(--color-mint)}.review-mode span{display:flex;flex-direction:column}.review-mode b{font-size:11px}.review-mode small{font-size:8px;text-align:left}.field-checks{display:flex;flex-wrap:wrap;gap:7px}.field-checks button{padding:8px 10px;border:1px solid var(--color-line);border-radius:8px;background:#fff;color:var(--color-ink-soft);display:flex;align-items:center;gap:4px;font-size:10px}.field-checks button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary)}.preview-card{margin-top:22px;padding:25px;border:1px solid var(--color-line);border-radius:15px;background:var(--color-bg)}.preview-card>div:first-child{display:flex;justify-content:space-between;color:var(--color-primary);font-size:11px;font-weight:800}.preview-card h2{margin:14px 0 8px}.preview-card>p{color:var(--color-ink-soft);line-height:1.7}.preview-card dl{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:22px 0 0}.preview-card dl>div{padding:12px;background:#fff;border-radius:9px}.preview-card dt{display:flex;align-items:center;gap:5px;color:var(--color-ink-soft);font-size:9px}.preview-card dt svg{width:14px}.preview-card dd{margin:7px 0 0;font-size:11px;font-weight:700}.submit-agreement{display:block;margin:18px 0;font-size:11px}.form-error{padding:10px;border-radius:8px;background:#ffeaed;color:var(--color-danger);font-size:11px}.form-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:24px}.ai-helper,.tips{margin-bottom:14px;padding:22px;border-radius:var(--radius-md)}.ai-helper{background:linear-gradient(145deg,#2b2051,#6f4ad8);color:#fff}.ai-helper>svg{color:#d9c8ff}.ai-helper h3{margin:14px 0 7px}.ai-helper p{color:#d2cae6;font-size:11px;line-height:1.7}.ai-helper a{color:#fff;font-size:11px;font-weight:800}.tips{background:#fff;border:1px solid var(--color-line)}.tips p{color:var(--color-ink-soft);font-size:10px}.submit-result{max-width:720px;margin:70px auto;text-align:center}.submit-result>span{width:70px;height:70px;margin:auto;border-radius:50%;background:var(--color-mint-soft);color:var(--color-mint);display:grid;place-items:center}.submit-result h1{margin:20px 0 10px}.submit-result p{color:var(--color-ink-soft)}.submit-result>div{display:flex;justify-content:center;gap:10px;margin-top:24px}
+.create-page{padding:26px 0 70px}.create-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px}.create-head>a{display:flex;align-items:center;gap:5px;color:var(--color-ink-soft);font-size:13px}.create-head>div{display:flex;align-items:center;gap:12px}.create-head span{color:var(--color-ink-soft);font-size:10px}.stepper{display:flex;justify-content:center;margin-bottom:30px}.stepper button{position:relative;width:150px;border:0;background:none;display:flex;align-items:center;gap:8px;color:#aaa;font-size:11px;cursor:pointer}.stepper button:not(:last-child):after{content:'';position:absolute;right:8px;width:35px;height:1px;background:var(--color-line)}.stepper span{width:26px;height:26px;border-radius:50%;background:#ddd;display:grid;place-items:center}.stepper .active{color:var(--color-ink)}.stepper .active span{background:var(--color-primary);color:#fff}.create-layout{display:grid;grid-template-columns:1fr 280px;gap:20px;align-items:start}.panel{padding:36px}.form-title h1{margin:3px 0 8px;font-size:29px}.form-title p{color:var(--color-ink-soft)}.input-group{margin:18px 0}.input-group small{margin-top:4px;text-align:right;color:var(--color-ink-soft);font-size:9px}.templates{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:22px 0}.templates button{padding:12px;border:1px solid var(--color-line);border-radius:10px;background:var(--color-bg);display:flex;align-items:center;gap:8px;text-align:left;cursor:pointer}.templates svg{color:var(--color-primary)}.templates span{display:flex;flex-direction:column}.templates b{font-size:11px}.templates small{margin-top:3px;color:var(--color-ink-soft);font-size:8px}.map-picker{padding:18px;border:1px dashed var(--color-primary);border-radius:13px;background:var(--color-primary-soft);display:flex;align-items:center;gap:12px}.map-picker>svg{color:var(--color-primary)}.map-picker div{flex:1}.map-picker b{font-size:12px}.map-picker p{margin:4px 0 0;color:var(--color-ink-soft);font-size:10px}.map-picker button{border:0;background:#fff;border-radius:8px;padding:8px;font-size:9px;font-weight:700}.review-mode{min-height:47px;padding:9px 12px;border-radius:10px;background:var(--color-mint-soft);display:flex;align-items:center;gap:8px;color:var(--color-mint)}.review-mode span{display:flex;flex-direction:column}.review-mode b{font-size:11px}.review-mode small{font-size:8px;text-align:left}.field-checks{display:flex;flex-wrap:wrap;gap:7px}.field-checks button{padding:8px 10px;border:1px solid var(--color-line);border-radius:8px;background:#fff;color:var(--color-ink-soft);display:flex;align-items:center;gap:4px;font-size:10px}.field-checks button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary)}.preview-card{margin-top:22px;padding:25px;border:1px solid var(--color-line);border-radius:15px;background:var(--color-bg)}.preview-card>div:first-child{display:flex;justify-content:space-between;color:var(--color-primary);font-size:11px;font-weight:800}.preview-card h2{margin:14px 0 8px}.preview-card>p{color:var(--color-ink-soft);line-height:1.7}.preview-card dl{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:22px 0 0}.preview-card dl>div{padding:12px;background:#fff;border-radius:9px}.preview-card dt{display:flex;align-items:center;gap:5px;color:var(--color-ink-soft);font-size:9px}.preview-card dt svg{width:14px}.preview-card dd{margin:7px 0 0;font-size:11px;font-weight:700}.submit-agreement{display:block;margin:18px 0;font-size:11px}.form-error{padding:10px;border-radius:8px;background:#ffeaed;color:var(--color-danger);font-size:11px}.audit-progress{margin-top:18px;padding:13px 15px;border-radius:10px;background:var(--color-primary-soft);color:var(--color-primary);display:flex;align-items:center;gap:10px}.audit-progress span{display:flex;flex-direction:column}.audit-progress b{font-size:11px}.audit-progress small{margin-top:3px;font-size:9px}.form-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:24px}.ai-helper,.tips{margin-bottom:14px;padding:22px;border-radius:var(--radius-md)}.ai-helper{background:linear-gradient(145deg,#2b2051,#6f4ad8);color:#fff}.ai-helper>svg{color:#d9c8ff}.ai-helper h3{margin:14px 0 7px}.ai-helper p{color:#d2cae6;font-size:11px;line-height:1.7}.ai-helper a{color:#fff;font-size:11px;font-weight:800}.tips{background:#fff;border:1px solid var(--color-line)}.tips p{color:var(--color-ink-soft);font-size:10px}.submit-result{max-width:720px;margin:70px auto;text-align:center}.submit-result>span{width:70px;height:70px;margin:auto;border-radius:50%;background:var(--color-mint-soft);color:var(--color-mint);display:grid;place-items:center}.submit-result h1{margin:20px 0 10px}.submit-result p{color:var(--color-ink-soft)}.submit-result>div:last-child{display:flex;justify-content:center;gap:10px;margin-top:24px}.audit-labels{display:flex;justify-content:center;flex-wrap:wrap;gap:6px;margin-top:14px}.audit-labels span{padding:5px 8px;border-radius:999px;background:#fff3df;color:#9a5a00;font-size:9px;font-weight:800}
 .field-error{margin-top:6px;color:var(--color-danger);font-size:10px}
 .manual-address small{display:block;text-align:left;color:var(--color-mint)}.coordinate-preview{margin-top:13px;padding-top:12px;border-top:1px dashed var(--color-line);display:flex;align-items:center;gap:5px;color:var(--color-ink-soft);font-size:10px}
 @media(max-width:850px){.create-layout{grid-template-columns:1fr}.create-layout aside{display:grid;grid-template-columns:1fr 1fr;gap:12px}.stepper button{width:auto;flex:1}.stepper button:after{display:none}.templates{grid-template-columns:1fr}.preview-card dl{grid-template-columns:1fr}}@media(max-width:600px){.create-head>div>span,.stepper b{display:none}.stepper button{justify-content:center}.panel{padding:22px}.create-layout aside{grid-template-columns:1fr}.map-picker{align-items:flex-start;flex-wrap:wrap}}

@@ -31,6 +31,8 @@ const nav = [
 const noticePreview = computed(() => app.notificationItems.slice(0, 8))
 
 async function loadCurrentUser() {
+  const token = localStorage.getItem('quju:token')
+  if (!token) return
   try {
     currentUser.value = await apiGet<User>('/auth/me')
     await app.refreshUserState()
@@ -51,6 +53,10 @@ async function toggleNotice() {
 async function openNotice(item: NotificationItem) {
   try {
     await app.markNotificationRead(item.id)
+    if (item.targetId && item.targetType?.toLowerCase() === 'activity') {
+      noticeOpen.value = false
+      await router.push(`/activities/${item.targetId}`)
+    }
   } catch (err) {
     app.showToast(err instanceof Error ? err.message : '通知状态更新失败')
   }
