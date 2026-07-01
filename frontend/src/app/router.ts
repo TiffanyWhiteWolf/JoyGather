@@ -33,6 +33,7 @@ const router = createRouter({
         { path: 'activities/:id', name: 'admin-activity-detail', component: () => import('@/views/admin/ActivityDetailView.vue') },
         { path: 'users', name: 'admin-users', component: () => import('@/views/admin/UsersView.vue') },
         { path: 'content', name: 'admin-content', component: () => import('@/views/admin/ContentView.vue') },
+        { path: 'notifications', name: 'admin-notifications', component: () => import('@/views/admin/NotificationsView.vue') },
       ],
     },
     { path: '/:pathMatch(.*)*', component: () => import('@/views/NotFoundView.vue') },

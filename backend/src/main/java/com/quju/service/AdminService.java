@@ -1,6 +1,7 @@
 package com.quju.service;
 
 import com.quju.dto.ActivityDto;
+import com.quju.dto.AdminDtos;
 import com.quju.dto.AiAuditDto;
 import com.quju.dto.DashboardDto;
 import com.quju.dto.ReviewDetailDto;
@@ -191,6 +192,56 @@ public class AdminService {
     private void log(String actorId, String action, String targetType, String targetId, String reason) {
         jdbc.update("insert into audit_logs (id,actor_id,action,target_type,target_id,reason) values (?,?,?,?,?,?)",
                 DbSupport.id("log"), actorId, action, targetType, targetId, reason);
+    }
+
+    public List<Map<String, Object>> publishedNotifications(String adminId) {
+        return jdbc.queryForList(
+            "select id, user_id, type, title, content, target_type, target_id, read_flag, created_at " +
+            "from notifications where user_id = ? and sender_id = ? order by created_at desc limit 50",
+            adminId, adminId
+        );
+    }
+
+    public void publishNotification(String adminId, AdminDtos.NotificationRequest request) {
+        if (request.getTitle() == null || request.getTitle().trim().isEmpty())
+            throw new IllegalStateException("通知标题不能为空");
+        if (request.getType() == null || request.getType().trim().isEmpty())
+            throw new IllegalStateException("通知类型不能为空");
+
+        String title = request.getTitle().trim();
+        String type = request.getType().trim();
+        String content = request.getContent();
+        String targetType = request.getTargetType();
+        String targetId = request.getTargetId() == null || request.getTargetId().trim().isEmpty()
+                ? null : request.getTargetId().trim();
+
+        // 先给管理员自己创建一条已读记录（用于"已发通知"列表）
+        jdbc.update(
+            "insert into notifications (id, user_id, sender_id, type, title, content, target_type, target_id, read_flag) " +
+            "values (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+            DbSupport.id("nf"), adminId, adminId, type, title, content, targetType, targetId
+        );
+
+        // 推送给目标用户
+        List<String> targetUserIds;
+        if (targetId != null) {
+            // 指定了目标用户，只发给他
+            targetUserIds = java.util.Collections.singletonList(targetId);
+        } else {
+            // 未指定则推送给所有正常状态的用户（排除管理员自己）
+            targetUserIds = jdbc.queryForList(
+                "select id from users where status <> '已注销' and id <> ?",
+                String.class, adminId
+            );
+        }
+
+        for (String userId : targetUserIds) {
+            jdbc.update(
+                "insert into notifications (id, user_id, sender_id, type, title, content, target_type, target_id) " +
+                "values (?, ?, ?, ?, ?, ?, ?, ?)",
+                DbSupport.id("nf"), userId, adminId, type, title, content, targetType, targetId
+            );
+        }
     }
 
     private void notifyActivityReviewResult(String activityId, String result, String reason) {

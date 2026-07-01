@@ -177,4 +177,18 @@ public class AdminController {
         teamService.restore(id, admin.getId());
         return ApiResponse.success(null);
     }
+
+    @GetMapping("/notifications")
+    public ApiResponse<List<Map<String, Object>>> notifications(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto admin = userService.requireAdmin(authorization);
+        return ApiResponse.success(adminService.publishedNotifications(admin.getId()));
+    }
+
+    @PostMapping("/notifications")
+    public ApiResponse<Void> publishNotification(@RequestBody AdminDtos.NotificationRequest request,
+                                                 @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto admin = userService.requireAdmin(authorization);
+        adminService.publishNotification(admin.getId(), request);
+        return ApiResponse.success(null);
+    }
 }
