@@ -3,6 +3,8 @@ package com.quju.service;
 import com.quju.dto.CommonDtos;
 import com.quju.dto.PlannerRequest;
 import com.quju.dto.PlannerResponse;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -16,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URLEncoder;
@@ -34,6 +37,7 @@ public class IntegrationService {
     private final JdbcTemplate jdbc;
     private final ObjectProvider<JavaMailSender> mailSender;
     private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${quju.app.public-base-url:http://localhost:5173}")
     private String publicBaseUrl;
@@ -144,18 +148,20 @@ public class IntegrationService {
     public PlannerResponse generatePlan(PlannerRequest request) {
         if (aiBaseUrl == null || aiBaseUrl.trim().isEmpty() || aiApiKey == null || aiApiKey.trim().isEmpty()) {
             logThirdParty("AI", "GENERATE_PLAN", "DEGRADED", request.getTheme(), "", "AI 未配置", 0);
-            return localPlan(request);
+            return localPlan(request, false, "AI 未配置，已使用本地模板生成。");
         }
         long started = System.currentTimeMillis();
         try {
-            Map<String, Object> payload = chatPayload("为趣聚平台生成线下活动方案，返回简洁标题、简介、标签、流程和安全须知。主题：" + request.getTheme() + " 人数：" + request.getPeople() + " 风格：" + request.getStyle());
+            Map<String, Object> payload = plannerPayload(request);
             HttpHeaders headers = aiHeaders();
             Map response = restTemplate.postForObject(aiBaseUrl + "/chat/completions", new HttpEntity<Map<String, Object>>(payload, headers), Map.class);
-            logThirdParty("AI", "GENERATE_PLAN", "SUCCESS", request.getTheme(), String.valueOf(response), "", elapsed(started));
-            return localPlan(request);
+            String content = extractAiContent(response);
+            PlannerResponse plan = parsePlannerResponse(content, request);
+            logThirdParty("AI", "GENERATE_PLAN", "SUCCESS", request.getTheme(), content, "", elapsed(started));
+            return plan;
         } catch (Exception ex) {
             logThirdParty("AI", "GENERATE_PLAN", "FAILED", request.getTheme(), "", trim(ex.getMessage()), elapsed(started));
-            return localPlan(request);
+            return localPlan(request, false, "AI 生成暂时不可用，已使用本地模板生成。");
         }
     }
 
@@ -242,6 +248,159 @@ public class IntegrationService {
         return payload;
     }
 
+    private Map<String, Object> plannerPayload(PlannerRequest request) {
+        Map<String, Object> system = new HashMap<String, Object>();
+        system.put("role", "system");
+        system.put("content",
+                "你是趣聚平台的线下活动策划助手。请输出可以直接展示给用户的活动方案。"
+                        + "必须只返回 JSON 对象，不要 Markdown，不要代码块。"
+                        + "JSON 字段固定为：title 字符串，introduction 字符串，tags 字符串数组，schedule 字符串数组，safetyNote 字符串。");
+
+        Map<String, Object> user = new HashMap<String, Object>();
+        user.put("role", "user");
+        user.put("content",
+                "活动主题：" + DbSupport.safe(request.getTheme(), "")
+                        + "\n预计人数：" + DbSupport.safe(request.getPeople(), "")
+                        + "\n活动氛围：" + DbSupport.safe(request.getStyle(), "")
+                        + "\n要求：标题要具体、有吸引力；简介 80-140 字；标签 3-5 个；流程 4-6 步；安全须知贴合活动场景。");
+
+        Map<String, Object> payload = new HashMap<String, Object>();
+        payload.put("model", aiModel);
+        payload.put("messages", Arrays.asList(system, user));
+        payload.put("temperature", 0.7);
+        return payload;
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractAiContent(Map response) {
+        if (response == null) throw new IllegalStateException("AI 返回为空");
+        Object choicesValue = response.get("choices");
+        if (choicesValue instanceof List && !((List) choicesValue).isEmpty()) {
+            Object choiceValue = ((List) choicesValue).get(0);
+            Map<String, Object> choice = asMap(choiceValue);
+            Map<String, Object> message = asMap(choice.get("message"));
+            String content = contentToText(message.get("content"));
+            if (!content.trim().isEmpty()) return content;
+            content = contentToText(choice.get("text"));
+            if (!content.trim().isEmpty()) return content;
+        }
+        String content = contentToText(response.get("content"));
+        if (!content.trim().isEmpty()) return content;
+        content = contentToText(response.get("output_text"));
+        if (!content.trim().isEmpty()) return content;
+        throw new IllegalStateException("AI 返回中没有可解析内容");
+    }
+
+    private String contentToText(Object value) {
+        if (value == null) return "";
+        if (value instanceof String) return (String) value;
+        if (value instanceof List) {
+            StringBuilder builder = new StringBuilder();
+            for (Object item : (List) value) {
+                String text = contentToText(item);
+                if (!text.trim().isEmpty()) builder.append(text);
+            }
+            return builder.toString();
+        }
+        if (value instanceof Map) {
+            Map<String, Object> map = asMap(value);
+            String text = contentToText(map.get("text"));
+            if (!text.trim().isEmpty()) return text;
+            return contentToText(map.get("content"));
+        }
+        return String.valueOf(value);
+    }
+
+    private PlannerResponse parsePlannerResponse(String content, PlannerRequest request) throws IOException {
+        String json = stripJsonWrapper(content);
+        JsonNode root = objectMapper.readTree(json);
+        if (!root.isObject()) throw new IllegalStateException("AI 返回不是 JSON 对象");
+
+        PlannerResponse fallback = localPlan(request, false, "");
+        String title = firstText(root, fallback.getTitle(), "title", "name");
+        String introduction = firstText(root, fallback.getIntroduction(), "introduction", "summary", "description", "intro");
+        List<String> tags = stringArray(root, "tags");
+        if (tags.isEmpty()) tags = fallback.getTags();
+        List<String> schedule = stringArray(root, "schedule", "agenda", "steps", "flow");
+        if (schedule.isEmpty()) schedule = fallback.getSchedule();
+        String safetyNote = firstText(root, fallback.getSafetyNote(), "safetyNote", "safety_note", "safety", "notice");
+
+        boolean hasMeaningfulAiContent = !title.equals(fallback.getTitle())
+                || !introduction.equals(fallback.getIntroduction())
+                || !schedule.equals(fallback.getSchedule());
+        if (!hasMeaningfulAiContent) throw new IllegalStateException("AI 返回缺少有效方案字段");
+        return new PlannerResponse(title, introduction, tags, schedule, safetyNote, true, "AI 已生成活动方案。");
+    }
+
+    private String stripJsonWrapper(String content) {
+        String text = DbSupport.safe(content, "").trim();
+        if (text.startsWith("```")) {
+            text = text.replaceFirst("^```[a-zA-Z]*\\s*", "");
+            int fence = text.lastIndexOf("```");
+            if (fence >= 0) text = text.substring(0, fence).trim();
+        }
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start >= 0 && end > start) return text.substring(start, end + 1);
+        return text;
+    }
+
+    private String firstText(JsonNode root, String fallback, String... names) {
+        for (String name : names) {
+            JsonNode node = root.get(name);
+            if (node != null && node.isTextual() && !node.asText().trim().isEmpty()) return node.asText().trim();
+        }
+        return fallback;
+    }
+
+    private List<String> stringArray(JsonNode root, String... names) {
+        for (String name : names) {
+            JsonNode node = root.get(name);
+            List<String> values = stringArray(node);
+            if (!values.isEmpty()) return values;
+        }
+        return Collections.emptyList();
+    }
+
+    private List<String> stringArray(JsonNode node) {
+        if (node == null || node.isNull()) return Collections.emptyList();
+        List<String> values = new ArrayList<String>();
+        if (node.isArray()) {
+            for (JsonNode item : node) {
+                String text = nodeToText(item);
+                if (!text.isEmpty()) values.add(text);
+            }
+        } else {
+            String text = nodeToText(node);
+            if (!text.isEmpty()) values.add(text);
+        }
+        return values;
+    }
+
+    private String nodeToText(JsonNode node) {
+        if (node == null || node.isNull()) return "";
+        if (node.isTextual()) return node.asText().trim();
+        if (node.isObject()) {
+            StringBuilder builder = new StringBuilder();
+            appendNodeField(builder, node, "time");
+            appendNodeField(builder, node, "title");
+            appendNodeField(builder, node, "step");
+            appendNodeField(builder, node, "content");
+            appendNodeField(builder, node, "description");
+            return builder.toString().trim();
+        }
+        return node.asText("").trim();
+    }
+
+    private void appendNodeField(StringBuilder builder, JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || !value.isValueNode()) return;
+        String text = value.asText("").trim();
+        if (text.isEmpty()) return;
+        if (builder.length() > 0) builder.append(" ");
+        builder.append(text);
+    }
+
     private ModerationResult parseModeration(String raw, int capacity) {
         String lower = raw == null ? "" : raw.toLowerCase(Locale.CHINA);
         if (capacity > 50 || lower.contains("review_required") || lower.contains("高风险") || lower.contains("危险")) {
@@ -270,14 +429,16 @@ public class IntegrationService {
                 reason, risky ? Arrays.asList("RULE_REVIEW") : Collections.<String>emptyList());
     }
 
-    private PlannerResponse localPlan(PlannerRequest request) {
+    private PlannerResponse localPlan(PlannerRequest request, boolean aiGenerated, String notice) {
         String theme = DbSupport.safe(request.getTheme(), "城市活动");
         return new PlannerResponse(
                 theme.length() > 18 ? theme.substring(0, 18) + "计划" : theme + "计划",
                 "围绕「" + theme + "」设计一场新朋友也能自然加入的线下活动。",
                 Arrays.asList("城市探索", DbSupport.safe(request.getStyle(), "轻松社交"), DbSupport.safe(request.getPeople(), "12-20 人")),
                 Arrays.asList("集合签到与破冰", "主题体验与分组任务", "交流分享与合影", "活动结束与后续联系"),
-                "发布前请确认集合地点、天气预案、紧急联系人和交通返程安排。"
+                "发布前请确认集合地点、天气预案、紧急联系人和交通返程安排。",
+                aiGenerated,
+                notice
         );
     }
 

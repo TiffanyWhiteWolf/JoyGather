@@ -243,7 +243,13 @@ public class MessageService {
             if (others.isEmpty()) throw new IllegalStateException("非好友且非同队关系不可发送消息");
             Integer count = jdbc.queryForObject("select count(*) from friendships where user_id = ? and friend_id = ?", Integer.class, userId, others.get(0));
             if (count == null || count == 0) {
-                // 非好友：最多允许发送 5 条消息（只统计解除好友关系之后的消息）
+                Integer boundaryCount = jdbc.queryForObject(
+                    "select count(*) from messages where conversation_id = ? and message_type = 'SYSTEM'",
+                    Integer.class, conversationId);
+                if (boundaryCount == null || boundaryCount == 0) {
+                    throw new IllegalStateException("你们还不是好友，不能发送消息");
+                }
+                // 解除好友后最多允许发送 5 条消息，只统计分界消息之后的内容。
                 Integer msgCount = jdbc.queryForObject(
                     "select count(*) from messages where conversation_id = ? and sender_id = ? " +
                     "and message_type != 'SYSTEM' " +
