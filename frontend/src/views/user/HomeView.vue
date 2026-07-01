@@ -4,11 +4,13 @@ import ActivityCard from '@/components/activity/ActivityCard.vue'
 import SectionHeader from '@/components/common/SectionHeader.vue'
 import CityMap from '@/components/map/CityMap.vue'
 import { useRouter } from 'vue-router'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { apiGet } from '@/lib/api'
 import type { Activity, Team } from '@/types'
+import { useAppStore } from '@/stores/app'
 
 const router = useRouter()
+const app = useAppStore()
 const query = ref('')
 const activities = ref<Activity[]>([])
 const recommendedActivities = ref<Activity[]>([])
@@ -25,18 +27,21 @@ const feedActivities = computed(() => {
 })
 const submitSearch = () => router.push({ path: '/discover', query: { q: query.value } })
 
-onMounted(async () => {
+async function loadHome() {
   const [activityRows, recommendationRows, teamRows] = await Promise.all([
-    apiGet<Activity[]>('/activities'),
+    apiGet<Activity[]>(`/activities?city=${encodeURIComponent(app.city)}`),
     apiGet<Activity[]>('/activities/recommendations?limit=10').catch(() => [] as Activity[]),
     apiGet<Team[]>('/teams'),
   ])
   activities.value = activityRows
-  recommendedActivities.value = recommendationRows.length > 0
-    ? recommendationRows
+  const cityRecommendations = recommendationRows.filter(item => item.city === app.city)
+  recommendedActivities.value = cityRecommendations.length > 0
+    ? cityRecommendations
     : [...activityRows].sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)))
   teams.value = teamRows
-})
+}
+onMounted(loadHome)
+watch(() => app.city, loadHome)
 </script>
 
 <template>
@@ -44,17 +49,17 @@ onMounted(async () => {
     <section class="home-hero">
       <div class="hero-orb orb-one"></div><div class="hero-orb orb-two"></div>
       <div class="container hero-inner">
-        <div class="hero-copy"><span class="hero-kicker"><span></span>本周杭州新增 {{ activities.length }} 场活动</span><h1>在城市里，<br />遇见<span>同频的人</span></h1><p>从一场日落散步开始，把屏幕里的兴趣，变成真实可触的共同经历。</p><form class="hero-search" @submit.prevent="submitSearch"><Search :size="20" /><input v-model="query" placeholder="搜索活动、地点或兴趣" /><button type="submit">去发现 <ArrowRight :size="17" /></button></form><div class="trending"><b>正在发生</b><RouterLink to="/discover?q=Citywalk">Citywalk</RouterLink><RouterLink to="/discover?q=飞盘">飞盘</RouterLink><RouterLink to="/discover?q=桌游">桌游</RouterLink><RouterLink to="/discover?q=徒步">轻徒步</RouterLink></div></div>
-        <div class="hero-visual"><img :src="heroCover" alt="城市活动" /><div class="floating-card float-top"><div class="float-icon"><CalendarDays :size="18" /></div><div><small>下一场</small><b>{{ nextActivity?.date || '待更新' }} {{ nextActivity?.time?.split(' - ')[0] || '' }}</b></div></div><div class="floating-card float-bottom"><div class="avatars"><img src="https://i.pravatar.cc/80?img=45" /><img src="https://i.pravatar.cc/80?img=15" /><img src="https://i.pravatar.cc/80?img=32" /></div><div><b>{{ nextActivity?.joined || 0 }} 人已加入</b><small>还剩 {{ nextActivity ? Math.max(0, nextActivity.capacity - nextActivity.joined) : 0 }} 个位置</small></div></div><div class="hero-label"><MapPin :size="15" /> {{ nextActivity?.district || '杭州' }} · {{ nextActivity?.location || '活动地点' }}</div></div>
+        <div class="hero-copy"><span class="hero-kicker"><span></span>本周{{ app.city }}新增 {{ activities.length }} 场活动</span><h1>在城市里，<br />遇见<span>同频的人</span></h1><p>从一场日落散步开始，把屏幕里的兴趣，变成真实可触的共同经历。</p><form class="hero-search" @submit.prevent="submitSearch"><Search :size="20" /><input v-model="query" placeholder="搜索活动、地点或兴趣" /><button type="submit">去发现 <ArrowRight :size="17" /></button></form><div class="trending"><b>正在发生</b><RouterLink to="/discover?q=Citywalk">Citywalk</RouterLink><RouterLink to="/discover?q=飞盘">飞盘</RouterLink><RouterLink to="/discover?q=桌游">桌游</RouterLink><RouterLink to="/discover?q=徒步">轻徒步</RouterLink></div></div>
+        <div class="hero-visual"><img :src="heroCover" alt="城市活动" /><div class="floating-card float-top"><div class="float-icon"><CalendarDays :size="18" /></div><div><small>下一场</small><b>{{ nextActivity?.date || '待更新' }} {{ nextActivity?.time?.split(' - ')[0] || '' }}</b></div></div><div class="floating-card float-bottom"><div class="avatars"><img src="https://i.pravatar.cc/80?img=45" /><img src="https://i.pravatar.cc/80?img=15" /><img src="https://i.pravatar.cc/80?img=32" /></div><div><b>{{ nextActivity?.joined || 0 }} 人已加入</b><small>还剩 {{ nextActivity ? Math.max(0, nextActivity.capacity - nextActivity.joined) : 0 }} 个位置</small></div></div><div class="hero-label"><MapPin :size="15" /> {{ nextActivity?.district || app.city }} · {{ nextActivity?.location || '活动地点' }}</div></div>
       </div>
     </section>
 
     <section class="container page-section">
-      <div class="feed-head"><SectionHeader eyebrow="ACTIVITY FEED" :title="`${feedTab}活动`" description="活动数据来自 MySQL，草稿和已下架内容不会出现在信息流中" link="/discover" /><div class="feed-tabs"><button v-for="tab in ['最新','推荐','附近'] as const" :key="tab" :class="{active:feedTab===tab}" @click="feedTab=tab">{{ tab }}</button></div></div>
+      <div class="feed-head"><SectionHeader eyebrow="ACTIVITY FEED" :title="`${feedTab}活动`" description="发现城市里的精彩活动，与志趣相投的人不期而遇" link="/discover" /><div class="feed-tabs"><button v-for="tab in ['最新','推荐','附近'] as const" :key="tab" :class="{active:feedTab===tab}" @click="feedTab=tab">{{ tab }}</button></div></div>
       <div class="activity-grid"><ActivityCard v-for="activity in feedActivities.slice(0, 3)" :key="activity.id" :activity="activity" /></div>
     </section>
 
-    <section class="map-section"><div class="container map-feature"><div class="map-copy"><span class="eyebrow">NEARBY</span><h2>你的附近，<br />正在发生什么？</h2><p>切换地图模式，直观看见城市里的活动密度。也许下一个有趣的夜晚，就在两个街区之外。</p><div class="map-stats"><div><b>{{ nearbyCount }}</b><span>附近活动</span></div><div><b>{{ activeMembers }}</b><span>小队成员</span></div></div><RouterLink to="/discover?view=map" class="btn btn-dark">打开活动地图 <ChevronRight :size="18" /></RouterLink></div><CityMap :activities="activities.slice(0,5)" compact /></div></section>
+    <section class="map-section"><div class="container map-feature"><div class="map-copy"><span class="eyebrow">NEARBY · {{ app.city }}</span><h2>你的附近，<br />正在发生什么？</h2><p>切换地图模式，直观看见城市里的活动密度。也许下一个有趣的夜晚，就在两个街区之外。</p><div class="map-stats"><div><b>{{ nearbyCount }}</b><span>附近活动</span></div><div><b>{{ activeMembers }}</b><span>小队成员</span></div></div><RouterLink to="/discover?view=map" class="btn btn-dark">打开{{ app.city }}活动地图 <ChevronRight :size="18" /></RouterLink></div><CityMap :activities="activities.slice(0,5)" :city="app.city" compact /></div></section>
 
     <section class="container page-section">
       <SectionHeader eyebrow="COMMUNITIES" title="找到你的长期同伴" description="一次见面是开始，一群同好让热爱持续发生" link="/teams" />

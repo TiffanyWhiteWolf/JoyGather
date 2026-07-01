@@ -38,6 +38,7 @@ export interface Activity {
   endAt?: string
   deadline?: string
   location: string
+  city: '杭州' | '北京'
   district: string
   distance: number
   longitude: number
@@ -143,6 +144,7 @@ export interface ActivityDraft {
   startTime: string
   endTime: string
   location: string
+  city: '杭州' | '北京'
   district: string
   capacity: number
   deadline: string
@@ -194,6 +196,7 @@ export interface Conversation {
   pinned?: boolean
   muted?: boolean
   friendUserId?: string
+  nonFriendMessageCount?: number
   messages: Message[]
 }
 
@@ -239,4 +242,16 @@ export interface ActivityAfterEvent {
   reviewDeadline?: string
   eligibilityMessage: string
   myReview?: ActivityReview
+}
+
+export interface NotificationItem {
+  id: string
+  userId: string
+  type: string
+  title: string
+  content?: string
+  targetType?: string
+  targetId?: string
+  read: boolean
+  createdAt?: string
 }

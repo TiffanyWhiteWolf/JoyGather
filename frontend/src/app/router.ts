@@ -22,6 +22,7 @@ const router = createRouter({
         { path: 'messages', name: 'messages', component: () => import('@/views/user/MessagesView.vue') },
         { path: 'friends', redirect: '/messages' },
         { path: 'profile', name: 'profile', component: () => import('@/views/user/ProfileView.vue') },
+        { path: 'profile/:userId', name: 'user-profile', component: () => import('@/views/user/UserProfileView.vue') },
       ],
     },
     {

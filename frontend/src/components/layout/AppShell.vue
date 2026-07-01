@@ -1,30 +1,34 @@
 <script setup lang="ts">
-import { Bell, ChevronDown, Compass, FileText, LogOut, Map, Menu, MessageCircle, Plus, QrCode, Sparkles, Users, X } from 'lucide-vue-next'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { Bell, ChevronDown, Compass, FileText, LogOut, Map, Menu, MessageCircle, Plus, QrCode, Sparkles, Upload, Users, X } from 'lucide-vue-next'
+import { Html5Qrcode } from 'html5-qrcode'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { apiGet, apiPost, clearAuthStorage, logout as apiLogout } from '@/lib/api'
 import UserQrCode from '@/components/common/UserQrCode.vue'
 import QrScannerModal from '@/components/common/QrScannerModal.vue'
-import type { User } from '@/types'
+import type { NotificationItem, User } from '@/types'
+import { supportedCities, type SupportedCity } from '@/config/cities'
 
 const app = useAppStore()
 const router = useRouter()
 const menuOpen = ref(false)
 const cityOpen = ref(false)
 const noticeOpen = ref(false)
+const noticeWrap = ref<HTMLElement | null>(null)
 const qrOpen = ref(false)
 const qrTab = ref<'my' | 'scan'>('my')
 const showQrScanner = ref(false)
+const qrFileInput = ref<HTMLInputElement | null>(null)
 const currentUser = ref<User | null>(null)
-const cities = ['杭州', '上海', '南京', '苏州']
-const notices = ['活动报名和候补通知会在这里显示', '商家审核结果会通过站内通知同步', '小队新消息请前往消息页查看']
+const cities = supportedCities
 const nav = [
   { to: '/', label: '发现', icon: Compass },
   { to: '/discover', label: '地图', icon: Map },
   { to: '/teams', label: '小队', icon: Users },
   { to: '/messages', label: '消息', icon: MessageCircle },
 ]
+const noticePreview = computed(() => app.notificationItems.slice(0, 8))
 
 async function loadCurrentUser() {
   try {
@@ -37,8 +41,37 @@ async function loadCurrentUser() {
   }
 }
 
-function selectCity(city: string) {
-  app.city = city
+async function toggleNotice() {
+  noticeOpen.value = !noticeOpen.value
+  if (noticeOpen.value && currentUser.value) {
+    await app.refreshNotifications()
+  }
+}
+
+async function openNotice(item: NotificationItem) {
+  try {
+    await app.markNotificationRead(item.id)
+  } catch (err) {
+    app.showToast(err instanceof Error ? err.message : '通知状态更新失败')
+  }
+}
+
+function formatNoticeTime(value?: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+function handleDocumentClick(event: MouseEvent) {
+  const target = event.target as Node | null
+  if (noticeOpen.value && noticeWrap.value && target && !noticeWrap.value.contains(target)) {
+    noticeOpen.value = false
+  }
+}
+
+function selectCity(city: SupportedCity) {
+  app.setCity(city)
   cityOpen.value = false
   app.showToast(`已切换到${city}`)
 }
@@ -54,14 +87,44 @@ async function logout() {
 async function handleScanned(userId: string, _nickname: string) {
   showQrScanner.value = false
   if (userId === currentUser.value?.id) {
-    alert('这是你自己的二维码')
+    app.showToast('这是你自己的二维码')
     return
   }
   try {
     await apiPost('/friends/requests', { userId, source: 'QR_CODE', message: '' })
-    alert('好友申请已发送！')
+    app.showToast('好友申请已发送！')
   } catch (err) {
-    alert(err instanceof Error ? err.message : '发送好友申请失败')
+    app.showToast(err instanceof Error ? err.message : '发送好友申请失败')
+  }
+}
+
+async function handleQrFileUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  try {
+    const scanner = new Html5Qrcode('qr-file-scan-temp')
+    const result = await scanner.scanFile(file, false)
+    const data = JSON.parse(result)
+    if (data.type === 'friend_request' && data.userId) {
+      if (data.userId === currentUser.value?.id) {
+        app.showToast('这是你自己的二维码')
+        return
+      }
+      qrOpen.value = false
+      try {
+        await apiPost('/friends/requests', { userId: data.userId, source: 'QR_CODE', message: '' })
+        app.showToast('好友申请已发送！')
+      } catch (err) {
+        app.showToast(err instanceof Error ? err.message : '发送好友申请失败')
+      }
+    } else {
+      app.showToast('未识别到有效的好友二维码，请检查图片')
+    }
+  } catch {
+    app.showToast('未识别到有效的好友二维码，请检查图片')
+  } finally {
+    input.value = ''
   }
 }
 
@@ -72,9 +135,11 @@ function handleAuthChanged() {
 onMounted(async () => {
   await loadCurrentUser()
   window.addEventListener('quju:auth-changed', handleAuthChanged)
+  document.addEventListener('click', handleDocumentClick)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('quju:auth-changed', handleAuthChanged)
+  document.removeEventListener('click', handleDocumentClick)
 })
 </script>
 
@@ -96,18 +161,25 @@ onBeforeUnmount(() => {
           <RouterLink v-for="item in nav" :key="item.to" :to="item.to" @click="menuOpen = false">
             <component :is="item.icon" :size="18" />{{ item.label }}
           </RouterLink>
-          <RouterLink to="/ai-planner" class="ai-mobile"><Sparkles :size="17" />AI 策划</RouterLink>
-          <RouterLink to="/drafts" class="ai-mobile"><FileText :size="17" />我的草稿</RouterLink>
+          <RouterLink v-if="currentUser" to="/drafts" @click="menuOpen = false"><FileText :size="18" />我的草稿</RouterLink>
+          <RouterLink to="/ai-planner" class="ai-nav-link" @click="menuOpen = false"><Sparkles :size="18" />AI 策划</RouterLink>
         </nav>
         <div class="top-actions">
-          <RouterLink to="/ai-planner" class="ai-link"><Sparkles :size="17" />AI 策划</RouterLink>
-          <RouterLink v-if="currentUser" to="/drafts" class="ai-link"><FileText :size="17" />我的草稿</RouterLink>
           <RouterLink to="/create" class="btn btn-primary btn-sm"><Plus :size="17" />发起活动</RouterLink>
-          <div class="top-popover-wrap">
-            <button class="icon-button notice" @click="noticeOpen = !noticeOpen"><Bell :size="19" /><span>{{ app.notifications }}</span></button>
+          <div ref="noticeWrap" class="top-popover-wrap">
+            <button class="icon-button notice" @click="toggleNotice"><Bell :size="19" /><span v-if="app.notifications">{{ app.notifications }}</span></button>
             <div v-if="noticeOpen" class="top-popover notice-menu">
               <b>通知</b>
-              <p v-for="item in notices" :key="item">{{ item }}</p>
+              <button v-for="item in noticePreview" :key="item.id" :class="['notice-item', { unread: !item.read }]" @click="openNotice(item)">
+                <span class="notice-meta">
+                  <strong>{{ item.title }}</strong>
+                  <small>{{ formatNoticeTime(item.createdAt) }}</small>
+                </span>
+                <span v-if="item.content" class="notice-content">{{ item.content }}</span>
+                <span class="notice-tag">{{ item.read ? '已读' : '未读' }}</span>
+              </button>
+              <p v-if="currentUser && !noticePreview.length" class="notice-empty">暂时还没有通知</p>
+              <p v-else-if="!currentUser" class="notice-empty">登录后可查看站内通知</p>
             </div>
           </div>
           <div v-if="currentUser" class="top-popover-wrap">
@@ -123,6 +195,12 @@ onBeforeUnmount(() => {
               <div v-else class="qr-panel qr-scan-panel">
                 <p>扫描其他用户的二维码即可发送好友申请</p>
                 <button class="btn btn-primary btn-sm" @click="showQrScanner=true;qrOpen=false">打开摄像头</button>
+                <span class="scan-divider">或</span>
+                <label class="scan-upload-btn">
+                  <Upload :size="14" />
+                  上传二维码图片
+                  <input ref="qrFileInput" type="file" accept="image/*" style="display:none" @change="handleQrFileUpload" />
+                </label>
               </div>
             </div>
           </div>
@@ -135,10 +213,11 @@ onBeforeUnmount(() => {
     </header>
     <main><RouterView /></main>
     <footer class="site-footer">
-      <div class="container footer-inner"><div class="brand brand-light"><span class="brand-mark"><span></span><span></span><span></span></span><span>趣聚</span></div><p>去见面，去同频，去发现城市的另一面。</p><div class="footer-links"><RouterLink to="/auth">登录 / 注册</RouterLink><RouterLink to="/admin">运营后台 →</RouterLink></div></div>
+      <div class="container footer-inner"><div class="brand brand-light"><span class="brand-mark"><span></span><span></span><span></span></span><span>趣聚</span></div><p>去见面，去同频，去发现城市的另一面。</p></div>
     </footer>
   </div>
   <QrScannerModal v-if="showQrScanner" @close="showQrScanner=false" @scanned="handleScanned" />
+  <div id="qr-file-scan-temp" style="display:none"></div>
 </template>
 
 <style scoped>
@@ -147,9 +226,18 @@ onBeforeUnmount(() => {
 .city-menu{display:grid;gap:4px}
 .city-menu button{padding:8px 10px;border:0;border-radius:8px;background:#fff;text-align:left;font-size:12px}
 .city-menu button.active,.city-menu button:hover{background:var(--color-primary-soft);color:var(--color-primary);font-weight:800}
-.notice-menu{width:250px}
-.notice-menu b{display:block;margin-bottom:6px;font-size:12px}
-.notice-menu p{margin:0;padding:8px 0;border-top:1px solid var(--color-line);color:var(--color-ink-soft);font-size:11px;line-height:1.5}
+.notice-menu{width:320px;display:grid;gap:8px}
+.notice-menu b{display:block;margin-bottom:2px;font-size:12px}
+.notice-item{padding:10px 0;border:0;border-top:1px solid var(--color-line);background:none;text-align:left;display:grid;gap:5px;cursor:pointer}
+.notice-item.unread strong{color:var(--color-primary)}
+.notice-item:first-of-type{border-top:1px solid var(--color-line)}
+.notice-meta{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.notice-meta strong{font-size:12px;font-weight:800;color:var(--color-ink)}
+.notice-meta small{color:var(--color-ink-soft);font-size:10px;white-space:nowrap}
+.notice-content{color:var(--color-ink-soft);font-size:11px;line-height:1.5}
+.notice-tag{justify-self:flex-start;padding:2px 8px;border-radius:999px;background:var(--color-bg);color:var(--color-ink-soft);font-size:10px;font-weight:700}
+.notice-item.unread .notice-tag{background:var(--color-primary-soft);color:var(--color-primary)}
+.notice-empty{margin:0;padding:10px 0;border-top:1px solid var(--color-line);color:var(--color-ink-soft);font-size:11px;line-height:1.5}
 .logout-button{color:var(--color-danger)}
 .qr-popover{width:280px;padding:0;overflow:hidden}
 .qr-tabs{display:flex;border-bottom:1px solid var(--color-line)}
@@ -157,4 +245,7 @@ onBeforeUnmount(() => {
 .qr-tabs button.active{color:var(--color-primary);box-shadow:inset 0 -2px var(--color-primary)}
 .qr-panel{padding:16px;display:flex;flex-direction:column;align-items:center}
 .qr-scan-panel p{margin:0 0 12px;color:var(--color-ink-soft);font-size:12px;text-align:center}
+.scan-divider{display:block;margin:10px 0;color:var(--color-ink-soft);font-size:12px}
+.scan-upload-btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:1px dashed var(--color-border);border-radius:8px;color:var(--color-primary);font-size:12px;cursor:pointer}
+.scan-upload-btn:hover{background:var(--color-primary-soft)}
 </style>

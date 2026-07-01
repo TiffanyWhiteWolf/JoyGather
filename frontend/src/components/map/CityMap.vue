@@ -5,8 +5,9 @@ import L, { type CircleMarker, type LatLngBounds, type Map as LeafletMap, type M
 import 'leaflet/dist/leaflet.css'
 import type { Activity } from '@/types'
 import { formatPrice } from '@/lib/utils'
+import { getCityConfig, type SupportedCity } from '@/config/cities'
 
-const props = defineProps<{ activities: Activity[]; compact?: boolean; loading?: boolean }>()
+const props = withDefaults(defineProps<{ activities: Activity[]; city?: SupportedCity; compact?: boolean; loading?: boolean }>(), { city: '杭州' })
 const emit = defineEmits<{
   'bounds-change': [bounds: { minLng: number; maxLng: number; minLat: number; maxLat: number }]
   'location-change': [location: { latitude: number; longitude: number }]
@@ -90,8 +91,9 @@ function locateMe() {
 onMounted(async () => {
   await nextTick()
   if (!mapEl.value) return
+  const config = getCityConfig(props.city)
   map = L.map(mapEl.value, { zoomControl: !props.compact, attributionControl: !props.compact })
-    .setView([30.274085, 120.15507], props.compact ? 11 : 12)
+    .setView(config.center, props.compact ? Math.max(10, config.zoom - 1) : config.zoom)
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap',
@@ -104,6 +106,13 @@ onMounted(async () => {
 })
 
 watch(() => props.activities, refreshMarkers, { deep: true })
+watch(() => props.city, city => {
+  hasFittedInitialActivities = false
+  selected.value = null
+  clearMarkers()
+  const config = getCityConfig(city)
+  map?.setView(config.center, props.compact ? Math.max(10, config.zoom - 1) : config.zoom)
+})
 
 onBeforeUnmount(() => {
   clearMarkers()

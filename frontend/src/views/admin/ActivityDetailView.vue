@@ -15,7 +15,7 @@ const reasonError = ref('')
 const fallbackActivity: Activity = {
   id: '', title: '加载中', summary: '', description: '', category: '城市探索',
   cover: 'https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=1400&q=85',
-  date: '', time: '', location: '', district: '', distance: 0, longitude: 50, latitude: 50,
+  date: '', time: '', location: '', city: '杭州', district: '', distance: 0, longitude: 120.15507, latitude: 30.274085,
   price: 0, capacity: 1, joined: 0, tags: [], status: '报名中',
   organizer: { id: '', nickname: '', avatar: 'https://i.pravatar.cc/160?img=47', role: '个人用户', city: '', bio: '', interests: [], following: 0, followers: 0, credit: 100 },
 }

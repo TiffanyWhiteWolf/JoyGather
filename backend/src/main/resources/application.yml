@@ -39,6 +39,11 @@ quju:
     from: ${QUJU_MAIL_FROM:no-reply@quju.local}
   amap:
     key: ${QUJU_AMAP_WEB_SERVICE_KEY:}
+  nominatim:
+    base-url: ${QUJU_NOMINATIM_BASE_URL:https://nominatim.openstreetmap.org}
+    user-agent: ${QUJU_NOMINATIM_USER_AGENT:JoyGather/1.0 (+http://localhost:5173)}
+    min-interval-ms: ${QUJU_NOMINATIM_MIN_INTERVAL_MS:1000}
+    cache-ttl-ms: ${QUJU_NOMINATIM_CACHE_TTL_MS:86400000}
   ai:
     base-url: ${QUJU_AI_BASE_URL:}
     api-key: ${QUJU_AI_API_KEY:}
