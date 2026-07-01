@@ -101,7 +101,7 @@ public class ActivityService {
         List<String> categoryList = categories == null || categories.trim().isEmpty() ? Collections.<String>emptyList() : DbSupport.split(categories);
         for (ActivityDto item : result) {
             if (!categoryList.isEmpty() && !categoryList.contains(item.getCategory())) continue;
-            if (city != null && !city.trim().isEmpty() && !(DbSupport.safe(item.getDistrict(), "").contains(city.trim()) || DbSupport.safe(item.getLocation(), "").contains(city.trim()))) continue;
+            if (city != null && !city.trim().isEmpty() && !city.trim().replace("市", "").equals(item.getCity())) continue;
             if ("免费".equals(fee) && item.getPrice().compareTo(BigDecimal.ZERO) > 0) continue;
             if ("付费".equals(fee) && item.getPrice().compareTo(BigDecimal.ZERO) <= 0) continue;
             if (distance != null && item.getDistance() != null && item.getDistance().compareTo(distance) > 0) continue;
@@ -177,6 +177,7 @@ public class ActivityService {
 
     @Transactional
     public ActivityDto create(ActivityCreateRequest request, String organizerId) {
+        normalizeLocation(request);
         validateForSubmit(request);
         ensureTeamCanAcceptActivity(request.getTeamId());
         String id = DbSupport.id("act");
@@ -184,12 +185,11 @@ public class ActivityService {
                 ? localModeration(request)
                 : integrationService.moderateActivity(id, request.getTitle(), request.getSummary(), request.getTags(), request.getCapacity());
         String status = "LOW_RISK".equals(moderation.result) ? "报名中" : "审核中";
-        jdbc.update("insert into activities (id,title,summary,description,category,cover,date_label,time_label,location,district,distance,longitude,latitude,price,capacity,joined_count,status,organizer_id,featured,safety_note,min_age,join_fields,published_at,team_id,visibility,ai_review_status,ai_risk_labels,submit_token) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,case when ? = '报名中' then now() else null end,?,?,?,?,?)",
+        jdbc.update("insert into activities (id,title,summary,description,category,cover,date_label,time_label,location,city,district,distance,longitude,latitude,price,capacity,joined_count,status,organizer_id,featured,safety_note,min_age,join_fields,published_at,team_id,visibility,ai_review_status,ai_risk_labels,submit_token) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,case when ? = '报名中' then now() else null end,?,?,?,?,?)",
                 id, request.getTitle(), request.getSummary(), DbSupport.safe(request.getDescription(), request.getSummary()),
                 request.getCategory(), DbSupport.safe(request.getCover(), defaultCover(request.getCategory())), request.getDate(), normalizedTime(request),
-                request.getLocation(), DbSupport.safe(request.getDistrict(), ""), BigDecimal.ZERO,
-                request.getLongitude() == null ? new BigDecimal("50") : request.getLongitude(),
-                request.getLatitude() == null ? new BigDecimal("50") : request.getLatitude(),
+                request.getLocation(), request.getCity(), DbSupport.safe(request.getDistrict(), ""), BigDecimal.ZERO,
+                request.getLongitude(), request.getLatitude(),
                 request.getPrice() == null ? BigDecimal.ZERO : request.getPrice(), request.getCapacity(), 0,
                 status, organizerId, false, request.getSafetyNote(), request.getMinAge(), DbSupport.join(request.getJoinFields()), status,
                 request.getTeamId(), DbSupport.safe(request.getVisibility(), request.getTeamId() == null ? "PUBLIC" : "TEAM"),
@@ -203,14 +203,14 @@ public class ActivityService {
 
     @Transactional
     public ActivityDto saveDraft(ActivityCreateRequest request, String userId) {
+        normalizeLocation(request);
         String id = DbSupport.id("draft");
-        jdbc.update("insert into activities (id,title,summary,description,category,cover,date_label,time_label,location,district,distance,longitude,latitude,price,capacity,joined_count,status,organizer_id,featured,safety_note,min_age,join_fields) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        jdbc.update("insert into activities (id,title,summary,description,category,cover,date_label,time_label,location,city,district,distance,longitude,latitude,price,capacity,joined_count,status,organizer_id,featured,safety_note,min_age,join_fields) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 id, DbSupport.safe(request.getTitle(), "未命名草稿"), DbSupport.safe(request.getSummary(), "草稿暂未填写简介"),
                 DbSupport.safe(request.getDescription(), request.getSummary()), DbSupport.safe(request.getCategory(), "城市探索"),
                 defaultCover(request.getCategory()), DbSupport.safe(request.getDate(), ""), normalizedTime(request),
-                DbSupport.safe(request.getLocation(), ""), DbSupport.safe(request.getDistrict(), ""), BigDecimal.ZERO,
-                request.getLongitude() == null ? new BigDecimal("50") : request.getLongitude(),
-                request.getLatitude() == null ? new BigDecimal("50") : request.getLatitude(),
+                DbSupport.safe(request.getLocation(), ""), request.getCity(), DbSupport.safe(request.getDistrict(), ""), BigDecimal.ZERO,
+                request.getLongitude(), request.getLatitude(),
                 request.getPrice() == null ? BigDecimal.ZERO : request.getPrice(), Math.max(2, request.getCapacity()),
                 0, "草稿", userId, false, request.getSafetyNote(), request.getMinAge(), DbSupport.join(request.getJoinFields()));
         applySchedule(id, request);
@@ -220,13 +220,13 @@ public class ActivityService {
 
     @Transactional
     public ActivityDto updateDraft(String id, ActivityCreateRequest request, String userId) {
-        int updated = jdbc.update("update activities set title = ?, summary = ?, description = ?, category = ?, cover = ?, date_label = ?, time_label = ?, location = ?, district = ?, longitude = ?, latitude = ?, price = ?, capacity = ?, safety_note = ?, min_age = ?, join_fields = ?, team_id = ?, visibility = ? where id = ? and organizer_id = ? and status = '草稿'",
+        normalizeLocation(request);
+        int updated = jdbc.update("update activities set title = ?, summary = ?, description = ?, category = ?, cover = ?, date_label = ?, time_label = ?, location = ?, city = ?, district = ?, longitude = ?, latitude = ?, price = ?, capacity = ?, safety_note = ?, min_age = ?, join_fields = ?, team_id = ?, visibility = ? where id = ? and organizer_id = ? and status = '草稿'",
                 DbSupport.safe(request.getTitle(), "未命名草稿"), DbSupport.safe(request.getSummary(), "草稿暂未填写简介"),
                 DbSupport.safe(request.getDescription(), request.getSummary()), DbSupport.safe(request.getCategory(), "城市探索"),
                 DbSupport.safe(request.getCover(), defaultCover(request.getCategory())), DbSupport.safe(request.getDate(), ""), normalizedTime(request),
-                DbSupport.safe(request.getLocation(), ""), DbSupport.safe(request.getDistrict(), ""),
-                request.getLongitude() == null ? new BigDecimal("50") : request.getLongitude(),
-                request.getLatitude() == null ? new BigDecimal("50") : request.getLatitude(),
+                DbSupport.safe(request.getLocation(), ""), request.getCity(), DbSupport.safe(request.getDistrict(), ""),
+                request.getLongitude(), request.getLatitude(),
                 request.getPrice() == null ? BigDecimal.ZERO : request.getPrice(), Math.max(2, request.getCapacity()),
                 request.getSafetyNote(), request.getMinAge(), DbSupport.join(request.getJoinFields()),
                 request.getTeamId(), DbSupport.safe(request.getVisibility(), request.getTeamId() == null ? "PUBLIC" : "TEAM"),
@@ -272,6 +272,7 @@ public class ActivityService {
         request.setDate("");
         request.setTime("");
         request.setLocation(source.getLocation());
+        request.setCity(source.getCity());
         request.setDistrict(source.getDistrict());
         request.setLongitude(source.getLongitude());
         request.setLatitude(source.getLatitude());
@@ -655,6 +656,7 @@ public class ActivityService {
                 activity.setEndAt(formatDateTime(rs.getTimestamp("end_at")));
                 activity.setDeadline(formatDateTime(rs.getTimestamp("registration_deadline")));
                 activity.setLocation(rs.getString("location"));
+                activity.setCity(rs.getString("city"));
                 activity.setDistrict(rs.getString("district"));
                 activity.setDistance(rs.getBigDecimal("distance"));
                 activity.setLongitude(rs.getBigDecimal("longitude"));
@@ -791,6 +793,27 @@ public class ActivityService {
         return new HashSet<String>(Arrays.asList(values));
     }
 
+    private void normalizeLocation(ActivityCreateRequest request) {
+        String city = DbSupport.safe(request.getCity(), "").trim();
+        if (city.isEmpty()) {
+            city = inferCity(request.getLongitude(), request.getLatitude(), request.getLocation());
+        }
+        if (!"杭州".equals(city) && !"北京".equals(city)) {
+            throw new IllegalStateException("当前仅支持杭州和北京的活动地点");
+        }
+        request.setCity(city);
+        if (request.getLongitude() == null) request.setLongitude("北京".equals(city) ? new BigDecimal("116.407400") : new BigDecimal("120.155070"));
+        if (request.getLatitude() == null) request.setLatitude("北京".equals(city) ? new BigDecimal("39.904200") : new BigDecimal("30.274085"));
+    }
+
+    private String inferCity(BigDecimal longitude, BigDecimal latitude, String location) {
+        if (location != null && location.contains("北京")) return "北京";
+        if (longitude != null && latitude != null
+                && longitude.compareTo(new BigDecimal("115")) >= 0 && longitude.compareTo(new BigDecimal("118")) <= 0
+                && latitude.compareTo(new BigDecimal("39")) >= 0 && latitude.compareTo(new BigDecimal("41.5")) <= 0) return "北京";
+        return "杭州";
+    }
+
     private void validateForSubmit(ActivityCreateRequest request) {
         if (request.getTitle() == null || request.getTitle().trim().isEmpty()) throw new IllegalStateException("活动名称不能为空");
         if (request.getSummary() == null || request.getSummary().trim().isEmpty()) throw new IllegalStateException("活动简介不能为空");
@@ -798,6 +821,11 @@ public class ActivityService {
         if (request.getDate() == null || request.getDate().trim().isEmpty()) throw new IllegalStateException("活动日期不能为空");
         if (request.getTime() == null && (request.getStartTime() == null || request.getEndTime() == null)) throw new IllegalStateException("活动时间不能为空");
         if (request.getLocation() == null || request.getLocation().trim().isEmpty()) throw new IllegalStateException("活动地点不能为空");
+        if (request.getLongitude() == null || request.getLatitude() == null) throw new IllegalStateException("活动经纬度不能为空");
+        if (request.getLongitude().compareTo(new BigDecimal("-180")) < 0 || request.getLongitude().compareTo(new BigDecimal("180")) > 0
+                || request.getLatitude().compareTo(new BigDecimal("-90")) < 0 || request.getLatitude().compareTo(new BigDecimal("90")) > 0) {
+            throw new IllegalStateException("活动经纬度格式不正确");
+        }
         if (request.getCapacity() < 2) throw new IllegalStateException("活动人数上限必须为大于等于2的整数");
         LocalDateTime startAt = parseStartAt(request);
         LocalDateTime endAt = parseEndAt(request);

@@ -7,6 +7,7 @@ import { apiGet, apiPost, clearAuthStorage, logout as apiLogout } from '@/lib/ap
 import UserQrCode from '@/components/common/UserQrCode.vue'
 import QrScannerModal from '@/components/common/QrScannerModal.vue'
 import type { User } from '@/types'
+import { supportedCities, type SupportedCity } from '@/config/cities'
 
 const app = useAppStore()
 const router = useRouter()
@@ -17,7 +18,7 @@ const qrOpen = ref(false)
 const qrTab = ref<'my' | 'scan'>('my')
 const showQrScanner = ref(false)
 const currentUser = ref<User | null>(null)
-const cities = ['杭州', '上海', '南京', '苏州']
+const cities = supportedCities
 const notices = ['活动报名和候补通知会在这里显示', '商家审核结果会通过站内通知同步', '小队新消息请前往消息页查看']
 const nav = [
   { to: '/', label: '发现', icon: Compass },
@@ -37,8 +38,8 @@ async function loadCurrentUser() {
   }
 }
 
-function selectCity(city: string) {
-  app.city = city
+function selectCity(city: SupportedCity) {
+  app.setCity(city)
   cityOpen.value = false
   app.showToast(`已切换到${city}`)
 }

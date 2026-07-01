@@ -91,6 +91,7 @@ public abstract class TestBase {
         req.setEndTime("17:00");
         req.setDeadline("2026-07-30T20:00:00");
         req.setLocation("杭州市西湖区");
+        req.setCity("杭州");
         req.setDistrict("西湖区");
         req.setPrice(BigDecimal.ZERO);
         req.setCapacity(capacity);
@@ -130,7 +131,7 @@ public abstract class TestBase {
                 + "description varchar(1000), category varchar(80), cover varchar(500),"
                 + "date_label varchar(80), time_label varchar(80),"
                 + "start_at timestamp, end_at timestamp, registration_deadline timestamp,"
-                + "location varchar(255), district varchar(80), distance decimal(8,2),"
+                + "location varchar(255), city varchar(80) default '杭州', district varchar(80), distance decimal(8,2),"
                 + "longitude decimal(10,6), latitude decimal(10,6), price decimal(10,2),"
                 + "capacity int, joined_count int, status varchar(32),"
                 + "organizer_id varchar(64), featured boolean,"

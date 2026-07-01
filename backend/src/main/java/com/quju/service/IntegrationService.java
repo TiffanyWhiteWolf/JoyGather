@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -142,19 +143,22 @@ public class IntegrationService {
     }
 
     public List<CommonDtos.GeoPoint> searchAmap(String keyword, String city) {
+        String normalizedCity = normalizeCity(city);
         if (amapKey == null || amapKey.trim().isEmpty()) {
             logThirdParty("AMAP", "PLACE_SEARCH", "DEGRADED", keyword, "", "高德 Key 未配置", 0);
-            return fallbackPlaces(keyword);
+            return fallbackPlaces(keyword, normalizedCity);
         }
         long started = System.currentTimeMillis();
         try {
-            String url = "https://restapi.amap.com/v3/place/text?key=" + amapKey + "&keywords=" + keyword + "&city=" + DbSupport.safe(city, "杭州") + "&offset=10&page=1";
+            String url = "https://restapi.amap.com/v3/place/text?key=" + encode(amapKey) + "&keywords=" + encode(DbSupport.safe(keyword, "")) + "&city=" + encode(normalizedCity) + "&citylimit=true&offset=10&page=1";
             Map response = restTemplate.getForObject(url, Map.class);
-            logThirdParty("AMAP", "PLACE_SEARCH", "SUCCESS", keyword, String.valueOf(response), "", elapsed(started));
+            List<CommonDtos.GeoPoint> points = parseAmapPlaces(response, normalizedCity);
+            logThirdParty("AMAP", "PLACE_SEARCH", "SUCCESS", keyword, String.valueOf(points.size()), "", elapsed(started));
+            if (!points.isEmpty()) return points;
         } catch (Exception ex) {
             logThirdParty("AMAP", "PLACE_SEARCH", "FAILED", keyword, "", trim(ex.getMessage()), elapsed(started));
         }
-        return fallbackPlaces(keyword);
+        return fallbackPlaces(keyword, normalizedCity);
     }
 
     public CommonDtos.GeoPoint reverseGeocode(BigDecimal longitude, BigDecimal latitude) {
@@ -171,9 +175,11 @@ public class IntegrationService {
             Map<String, Object> regeocode = asMap(response == null ? null : response.get("regeocode"));
             Map<String, Object> address = asMap(regeocode.get("addressComponent"));
             String district = DbSupport.safe(String.valueOf(address.get("district")), fallback.getDistrict()).trim();
+            String city = DbSupport.safe(String.valueOf(address.get("city")), fallback.getCity()).trim();
             String formatted = DbSupport.safe(String.valueOf(regeocode.get("formatted_address")), fallback.getName()).trim();
             CommonDtos.GeoPoint point = new CommonDtos.GeoPoint();
             point.setName(formatted == null || formatted.isEmpty() || "null".equals(formatted) ? fallback.getName() : formatted);
+            point.setCity(city == null || city.isEmpty() || "null".equals(city) ? fallback.getCity() : city.replace("市", ""));
             point.setDistrict(district == null || district.isEmpty() || "null".equals(district) ? fallback.getDistrict() : district);
             point.setLongitude(longitude);
             point.setLatitude(latitude);
@@ -260,29 +266,77 @@ public class IntegrationService {
         }
     }
 
-    private List<CommonDtos.GeoPoint> fallbackPlaces(String keyword) {
-        CommonDtos.GeoPoint point = new CommonDtos.GeoPoint();
-        point.setName(keyword == null || keyword.trim().isEmpty() ? "杭州市中心" : keyword.trim());
-        point.setDistrict("杭州");
-        point.setLongitude(new BigDecimal("120.155070"));
-        point.setLatitude(new BigDecimal("30.274085"));
-        return Collections.singletonList(point);
+    private List<CommonDtos.GeoPoint> parseAmapPlaces(Map response, String fallbackCity) {
+        Object rawPois = response == null ? null : response.get("pois");
+        if (!(rawPois instanceof List)) return Collections.emptyList();
+        List<CommonDtos.GeoPoint> result = new ArrayList<CommonDtos.GeoPoint>();
+        for (Object raw : (List) rawPois) {
+            Map<String, Object> poi = asMap(raw);
+            String[] location = DbSupport.safe(String.valueOf(poi.get("location")), "").split(",");
+            if (location.length != 2) continue;
+            try {
+                CommonDtos.GeoPoint point = new CommonDtos.GeoPoint();
+                point.setName(DbSupport.safe(String.valueOf(poi.get("name")), "地点"));
+                point.setCity(normalizeCity(DbSupport.safe(String.valueOf(poi.get("cityname")), fallbackCity)));
+                point.setDistrict(DbSupport.safe(String.valueOf(poi.get("adname")), point.getCity()));
+                point.setLongitude(new BigDecimal(location[0]));
+                point.setLatitude(new BigDecimal(location[1]));
+                result.add(point);
+            } catch (NumberFormatException ignored) { }
+        }
+        return result;
+    }
+
+    private List<CommonDtos.GeoPoint> fallbackPlaces(String keyword, String city) {
+        String[][] rows = "北京".equals(city)
+                ? new String[][] {
+                    {"奥林匹克森林公园南门", "朝阳区", "116.392891", "40.015120"},
+                    {"国家图书馆", "海淀区", "116.325190", "39.943047"},
+                    {"北京坊", "西城区", "116.397910", "39.898215"},
+                    {"798艺术区", "朝阳区", "116.495570", "39.984110"}
+                }
+                : new String[][] {
+                    {"桥西历史文化街区", "拱墅区", "120.139863", "30.318332"},
+                    {"九溪公交站", "西湖区", "120.119235", "30.209840"},
+                    {"湖滨银泰 IN77", "上城区", "120.168929", "30.255672"},
+                    {"天目里社区中心", "西湖区", "120.121900", "30.283300"}
+                };
+        String search = DbSupport.safe(keyword, "").trim().toLowerCase(Locale.CHINA);
+        List<CommonDtos.GeoPoint> result = new ArrayList<CommonDtos.GeoPoint>();
+        for (String[] row : rows) {
+            if (!search.isEmpty() && !row[0].toLowerCase(Locale.CHINA).contains(search) && !row[1].contains(search)) continue;
+            result.add(geoPoint(row[0], city, row[1], row[2], row[3]));
+        }
+        if (!result.isEmpty()) return result;
+        String[] first = rows[0];
+        return Collections.singletonList(geoPoint(search.isEmpty() ? city + "市中心" : keyword.trim(), city, first[1], first[2], first[3]));
     }
 
     private CommonDtos.GeoPoint fallbackReversePoint(BigDecimal longitude, BigDecimal latitude) {
-        String district = nearestHangzhouDistrict(longitude, latitude);
+        String city = cityForCoordinate(longitude, latitude);
+        String district = nearestDistrict(city, longitude, latitude);
         CommonDtos.GeoPoint point = new CommonDtos.GeoPoint();
         point.setName("当前位置 " + latitude.toPlainString() + ", " + longitude.toPlainString());
+        point.setCity(city);
         point.setDistrict(district);
         point.setLongitude(longitude);
         point.setLatitude(latitude);
         return point;
     }
 
-    private String nearestHangzhouDistrict(BigDecimal longitude, BigDecimal latitude) {
+    private String nearestDistrict(String city, BigDecimal longitude, BigDecimal latitude) {
         double lng = longitude.doubleValue();
         double lat = latitude.doubleValue();
-        Object[][] centers = {
+        Object[][] centers = "北京".equals(city) ? new Object[][] {
+                {"东城区", 116.4188, 39.9175},
+                {"西城区", 116.3668, 39.9153},
+                {"朝阳区", 116.4436, 39.9219},
+                {"海淀区", 116.2981, 39.9593},
+                {"丰台区", 116.2867, 39.8584},
+                {"石景山区", 116.2229, 39.9066},
+                {"通州区", 116.6571, 39.9097},
+                {"昌平区", 116.2312, 40.2207}
+        } : new Object[][] {
                 {"拱墅区", 120.1551, 30.3183},
                 {"西湖区", 120.1302, 30.2595},
                 {"上城区", 120.1715, 30.2502},
@@ -304,6 +358,35 @@ public class IntegrationService {
             }
         }
         return best;
+    }
+
+    private String cityForCoordinate(BigDecimal longitude, BigDecimal latitude) {
+        double lng = longitude.doubleValue();
+        double lat = latitude.doubleValue();
+        return lng >= 115D && lng <= 118D && lat >= 39D && lat <= 41.5D ? "北京" : "杭州";
+    }
+
+    private String normalizeCity(String city) {
+        String value = DbSupport.safe(city, "杭州").replace("市", "").trim();
+        return "北京".equals(value) ? "北京" : "杭州";
+    }
+
+    private CommonDtos.GeoPoint geoPoint(String name, String city, String district, String longitude, String latitude) {
+        CommonDtos.GeoPoint point = new CommonDtos.GeoPoint();
+        point.setName(name);
+        point.setCity(city);
+        point.setDistrict(district);
+        point.setLongitude(new BigDecimal(longitude));
+        point.setLatitude(new BigDecimal(latitude));
+        return point;
+    }
+
+    private String encode(String value) {
+        try {
+            return URLEncoder.encode(value, "UTF-8");
+        } catch (Exception ex) {
+            return value;
+        }
     }
 
     @SuppressWarnings("unchecked")
