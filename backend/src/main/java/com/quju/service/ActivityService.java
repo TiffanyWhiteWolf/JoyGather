@@ -185,7 +185,8 @@ public class ActivityService {
         String id = DbSupport.id("act");
         IntegrationService.ModerationResult moderation = integrationService == null
                 ? localModeration(request)
-                : integrationService.moderateActivity(id, request.getTitle(), request.getSummary(), request.getTags(), request.getCapacity());
+                : integrationService.moderateActivity(id, request.getTitle(), request.getSummary(), request.getDescription(),
+                        request.getCategory(), request.getTags(), request.getSafetyNote(), request.getLocation(), request.getCapacity());
         String status = "LOW_RISK".equals(moderation.result) ? "报名中" : "审核中";
         jdbc.update("insert into activities (id,title,summary,description,category,cover,date_label,time_label,location,city,district,distance,longitude,latitude,price,capacity,joined_count,status,organizer_id,featured,safety_note,min_age,join_fields,published_at,team_id,visibility,ai_review_status,ai_risk_labels,submit_token) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,case when ? = '报名中' then now() else null end,?,?,?,?,?)",
                 id, request.getTitle(), request.getSummary(), DbSupport.safe(request.getDescription(), request.getSummary()),
@@ -198,7 +199,8 @@ public class ActivityService {
                 moderation.result, DbSupport.join(moderation.labels), request.getSubmitToken());
         applySchedule(id, request);
         replaceTags(id, request.getTags());
-        if (integrationService != null) integrationService.saveAiAudit(id, moderation, moderation.reason);
+        jdbc.update("update activities set review_reason = ? where id = ?", moderation.reason, id);
+        if (integrationService != null) integrationService.saveAiAudit(id, moderation);
         if ("审核中".equals(status)) createActivityReview(id, request, organizerId, moderation);
         return requireActivity(id);
     }
@@ -252,10 +254,12 @@ public class ActivityService {
         validateDraftForSubmit(draft);
         IntegrationService.ModerationResult moderation = integrationService == null
                 ? new IntegrationService.ModerationResult(draft.getCapacity() > 50 ? "REVIEW_REQUIRED" : "LOW_RISK", draft.getCapacity() > 50 ? "中" : "低", draft.getCapacity() > 50 ? "报名人数超过 50 人，转入人工审核" : "规则审核低风险", Collections.<String>emptyList())
-                : integrationService.moderateActivity(id, draft.getTitle(), draft.getSummary(), draft.getTags(), draft.getCapacity());
+                : integrationService.moderateActivity(id, draft.getTitle(), draft.getSummary(), draft.getDescription(),
+                        draft.getCategory(), draft.getTags(), draft.getSafetyNote(), draft.getLocation(), draft.getCapacity());
         String status = "LOW_RISK".equals(moderation.result) ? "报名中" : "审核中";
-        jdbc.update("update activities set status = ?, ai_review_status = ?, ai_risk_labels = ?, published_at = case when ? = '报名中' then now() else null end where id = ?", status, moderation.result, DbSupport.join(moderation.labels), status, id);
-        if (integrationService != null) integrationService.saveAiAudit(id, moderation, moderation.reason);
+        jdbc.update("update activities set status = ?, ai_review_status = ?, ai_risk_labels = ?, review_reason = ?, published_at = case when ? = '报名中' then now() else null end where id = ?",
+                status, moderation.result, DbSupport.join(moderation.labels), moderation.reason, status, id);
+        if (integrationService != null) integrationService.saveAiAudit(id, moderation);
         if ("审核中".equals(status)) {
             jdbc.update("insert into review_tasks (id,type,target_id,title,submitter,risk,reason,status) values (?,?,?,?,?,?,?,?)",
                     DbSupport.id("rv"), "活动审核", id, draft.getTitle(), draft.getOrganizer().getNickname(), moderation.risk, moderation.reason, "待审核");
@@ -728,6 +732,10 @@ public class ActivityService {
                 activity.setMinAge(rs.getInt("min_age"));
                 activity.setJoinFields(DbSupport.split(rs.getString("join_fields")));
                 activity.setOfflineReason(rs.getString("offline_reason"));
+                activity.setAiReviewStatus(rs.getString("ai_review_status"));
+                activity.setAiRiskLabels(DbSupport.split(rs.getString("ai_risk_labels")));
+                activity.setReviewDecision(rs.getString("review_decision"));
+                activity.setReviewReason(rs.getString("review_reason"));
                 activity.setPublishedAt(formatDateTime(rs.getTimestamp("published_at")));
                 activity.setUpdatedAt(formatDateTime(rs.getTimestamp("updated_at")));
                 activity.setTags(tagsFor(activity.getId()));

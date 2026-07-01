@@ -50,10 +50,28 @@ npm --cache ../.npm run dev
 
 - 高德：`QUJU_AMAP_WEB_SERVICE_KEY`
 - SMTP：`QUJU_SMTP_HOST`、`QUJU_SMTP_PORT`、`QUJU_SMTP_USERNAME`、`QUJU_SMTP_PASSWORD`、`QUJU_MAIL_FROM`
-- OpenAI-compatible：`QUJU_AI_BASE_URL`、`QUJU_AI_API_KEY`、`QUJU_AI_MODEL`
+- OpenAI-compatible：`QUJU_AI_BASE_URL`、`QUJU_AI_API_KEY`、`QUJU_AI_MODEL`、`QUJU_AI_RESPONSE_FORMAT`
 - S3-compatible：`QUJU_S3_ENDPOINT`、`QUJU_S3_REGION`、`QUJU_S3_BUCKET`、`QUJU_S3_ACCESS_KEY`、`QUJU_S3_SECRET_KEY`、`QUJU_S3_PUBLIC_BASE_URL`
 
 未配置第三方时，本地开发仍可运行：邮件写入 outbox，地图/AI/S3 走明确降级并记录 `third_party_events`。
+
+内容安全审核采用服务端 OpenAI-compatible Chat Completions 接口和严格 JSON Schema。未配置、超时、异常或结果无法解析时，活动只会进入人工审核，不会自动发布。macOS / zsh 可在启动后端前配置：
+
+```bash
+export QUJU_AI_BASE_URL="https://api.openai.com/v1"
+export QUJU_AI_API_KEY="你的服务端 API Key"
+export QUJU_AI_MODEL="gpt-4o-mini"
+export QUJU_AI_RESPONSE_FORMAT="auto"
+mvn spring-boot:run
+```
+
+也可以复制 `backend/src/main/resources/application-local.example.yml` 为被 Git 忽略的 `application-local.yml`，填写 `quju.ai` 后使用本地配置启动：
+
+```bash
+SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
+```
+
+API Key 只能配置在后端环境变量或未提交的本地配置中，不要写入前端源码或提交到 Git。
 
 访问地址：
 

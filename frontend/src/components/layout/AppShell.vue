@@ -49,6 +49,10 @@ async function toggleNotice() {
 async function openNotice(item: NotificationItem) {
   try {
     await app.markNotificationRead(item.id)
+    if (item.targetId && item.targetType?.toLowerCase() === 'activity') {
+      noticeOpen.value = false
+      await router.push(`/activities/${item.targetId}`)
+    }
   } catch (err) {
     app.showToast(err instanceof Error ? err.message : '通知状态更新失败')
   }
