@@ -97,9 +97,10 @@ public class IntegrationService {
         } catch (Exception ignored) { }
     }
 
-    public void sendActivationEmail(String email, String token) {
+    public void sendActivationEmail(String email, String token, String origin) {
         String subject = "激活你的趣聚账号";
-        String link = publicBaseUrl + "/auth?activate=" + token;
+        String base = origin != null && !origin.isEmpty() ? origin : publicBaseUrl;
+        String link = base + "/auth?activate=" + token;
         String htmlBody = "<html><body style=\"font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px;\">"
                 + "<h2 style=\"color:#ff6b45;\">趣聚</h2>"
                 + "<p>感谢注册趣聚！请点击下方按钮激活你的账号：</p>"

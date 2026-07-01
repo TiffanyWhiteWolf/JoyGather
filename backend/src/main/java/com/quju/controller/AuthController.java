@@ -4,6 +4,7 @@ import com.quju.common.ApiResponse;
 import com.quju.dto.AuthDtos;
 import com.quju.dto.UserDto;
 import com.quju.service.UserService;
+import javax.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,8 +23,12 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ApiResponse<AuthDtos.ActivationResponse> register(@RequestBody AuthDtos.RegisterRequest request) {
-        return ApiResponse.success(userService.register(request));
+    public ApiResponse<AuthDtos.ActivationResponse> register(@RequestBody AuthDtos.RegisterRequest request,
+                                                              HttpServletRequest httpRequest) {
+        String host = httpRequest.getHeader("Host");
+        String scheme = httpRequest.getHeader("X-Forwarded-Proto");
+        String origin = (scheme != null ? scheme : "https") + "://" + (host != null ? host : "localhost");
+        return ApiResponse.success(userService.register(request, origin));
     }
 
     @PostMapping("/login")

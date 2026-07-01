@@ -31,7 +31,7 @@ interface ActivationResponse { userId: string; status: string }
 async function submit() {
   error.value = ''
   if (!/^\S+@\S+\.\S+$/.test(email.value)) error.value = '请输入有效的邮箱地址。'
-  else if (password.value.length < 8) error.value = '密码至少需要 8 位。'
+  else if (password.value.length < 8) error.value = '邮箱或密码错误。'
   else if (isRegister.value && password.value !== confirmPassword.value) error.value = '两次密码不一致。'
   else if (isRegister.value && !nickname.value.trim()) error.value = '请输入全平台唯一昵称。'
   else if (isRegister.value && role.value === '商家用户' && (!merchantName.value.trim() || !license.value)) error.value = '商家注册需要填写商家名称并上传营业凭证。'
