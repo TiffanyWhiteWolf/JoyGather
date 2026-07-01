@@ -194,6 +194,7 @@ export interface Conversation {
   pinned?: boolean
   muted?: boolean
   friendUserId?: string
+  nonFriendMessageCount?: number
   messages: Message[]
 }
 

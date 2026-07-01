@@ -26,6 +26,26 @@ import java.util.UUID;
 @Service
 public class UserService {
     public static final String DEFAULT_USER_ID = "u-001";
+    private static final String[] DEFAULT_AVATARS = {
+        "01cf64c9de601412382036959cd5591e.jpg",
+        "1082de0707ac1d71aaf1c7b36271f57b.jpg",
+        "31b02ba3b35dc65308917a6d078bfb97.jpg",
+        "4179dda7978f0beb9b02df68496f2126.jpg",
+        "5935dfde6b6a77577e6ae0185d136196.jpg",
+        "5c172fdf2693bb3cf0cf8a1a0b292cc8.jpg",
+        "748f59e0cb8936d7195e7d3ef5996da7.jpg",
+        "90c19721335786af5827ca4297426aa7.jpg",
+        "9e39d7545e043373b8e3e642280f66b6.jpg",
+        "a921481cc4f0a753f4ef0927d0d3a8c8.jpg",
+        "b11c7bc2b04b10d9e2c120cb155a9bc5.jpg",
+        "c399e93a68cac72874937e11fdcfc19d.jpg",
+        "cd02c119c6f8f021673bf8fae200bc76.jpg",
+        "cf3cb6c05d4c4192daf0ef56f6e6fea0.jpg",
+        "d50edf9e226271a06ea9ddd6ce197f26.jpg",
+        "d9e3a6b2d0cd7173df8c314d811720d7.jpg",
+        "df0721138c4a603409035a39b1f873b3.jpg",
+    };
+
     private final JdbcTemplate jdbc;
     private final IntegrationService integrationService;
 
@@ -39,12 +59,51 @@ public class UserService {
         this.integrationService = integrationService;
     }
 
+    static String randomDefaultAvatar(String userId) {
+        int idx = Math.abs(userId.hashCode() % DEFAULT_AVATARS.length);
+        return "/pictures/" + DEFAULT_AVATARS[idx];
+    }
+
     public UserDto findById(String id) {
         try {
             return jdbc.queryForObject("select * from users where id = ?", userMapper(), id);
         } catch (EmptyResultDataAccessException ex) {
             throw new NoSuchElementException("用户不存在");
         }
+    }
+
+    public Map<String, Object> getPublicProfile(String userId, String currentUserId) {
+        UserDto user = findById(userId);
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("id", user.getId());
+        result.put("nickname", user.getNickname());
+        result.put("avatar", user.getAvatar());
+        result.put("role", user.getRole());
+        result.put("city", user.getCity());
+        result.put("gender", user.getGender());
+        result.put("birthday", user.getBirthday());
+        result.put("bio", user.getBio());
+        result.put("interests", user.getInterests());
+        result.put("following", user.getFollowing());
+        result.put("followers", user.getFollowers());
+        result.put("credit", user.getCredit());
+        result.put("verified", user.getVerified());
+        if ("商家用户".equals(user.getRole())) {
+            result.put("merchantName", user.getMerchantName());
+            result.put("merchantFields", user.getMerchantFields());
+        }
+        if (currentUserId != null && !currentUserId.equals(userId)) {
+            java.util.List<Integer> fc = jdbc.queryForList(
+                "select 1 from friendships where user_id = ? and friend_id = ?", Integer.class, currentUserId, userId);
+            result.put("isFriend", !fc.isEmpty());
+            java.util.List<Integer> fw = jdbc.queryForList(
+                "select 1 from follows where follower_id = ? and followee_id = ?", Integer.class, currentUserId, userId);
+            result.put("isFollowed", !fw.isEmpty());
+            java.util.List<Integer> bk = jdbc.queryForList(
+                "select 1 from user_blocks where user_id = ? and blocked_user_id = ?", Integer.class, currentUserId, userId);
+            result.put("isBlocked", !bk.isEmpty());
+        }
+        return result;
     }
 
     public List<UserDto> search(String query, String role, String status) {
@@ -64,7 +123,7 @@ public class UserService {
         String merchantName = "商家用户".equals(role) ? request.getMerchantName() : null;
         jdbc.update("insert into users (id,email,password_hash,nickname,avatar,role,city,bio,interests,credit,verified,activated,activation_token,status,merchant_name) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 id, request.getEmail().trim().toLowerCase(), hashPassword(request.getPassword()), request.getNickname().trim(),
-                "https://i.pravatar.cc/160?u=" + id, role, "杭州", "", "", 100, false, false, activationToken, "正常", merchantName);
+                                randomDefaultAvatar(id), role, "杭州", "", "", 100, false, false, activationToken, "正常", merchantName);
         if ("商家用户".equals(role)) {
             String applicationId = DbSupport.id("merchant");
             jdbc.update("insert into merchant_applications (id,user_id,merchant_name,license_name,status) values (?,?,?,?,?)",
@@ -256,7 +315,7 @@ public class UserService {
         jdbc.update("delete from sessions where user_id = ?", user.getId());
         jdbc.update("update users set email = ?, password_hash = ?, nickname = ?, avatar = ?, city = '', gender = null, birthday = null, cover = null, bio = '', interests = '', following_count = 0, follower_count = 0, credit = 0, verified = 0, activated = 0, activation_token = null, status = '已注销', ban_reason = ?, ban_until = null, merchant_name = null, merchant_nickname = null, merchant_fields = null where id = ?",
                 deletedEmail, "deleted:" + UUID.randomUUID().toString().replace("-", ""),
-                deletedNickname, "https://i.pravatar.cc/160?u=deleted", reason, user.getId());
+                deletedNickname, randomDefaultAvatar("deleted"), reason, user.getId());
         log(user.getId(), "CANCEL_ACCOUNT", "USER", user.getId(), reason);
     }
 
