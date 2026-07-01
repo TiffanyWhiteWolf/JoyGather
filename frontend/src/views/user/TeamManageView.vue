@@ -1,21 +1,17 @@
 <script setup lang="ts">
-<<<<<<< HEAD
 import { ArrowLeft, Bell, Check, Crown, FileText, ImagePlus, Settings, ShieldCheck, Trash2, Users, X } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-=======
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft, Check, Crown, Edit3, Flag, Image, Shield, Trash2, UserPlus,
   UserX, Users, X, AlertTriangle,
 } from 'lucide-vue-next'
->>>>>>> 8c2225e3bc741cf1a70a00cf86cd60f5e64684d6
 import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api'
 import { useAppStore } from '@/stores/app'
 import type { Team, TeamMember } from '@/types'
 
-<<<<<<< HEAD
 interface JoinRequest {
   id: string
   userId?: string
@@ -83,7 +79,6 @@ async function loadAll() {
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : '小队管理信息加载失败'
-=======
 const app = useAppStore()
 const route = useRoute()
 const router = useRouter()
@@ -125,7 +120,6 @@ async function loadAll() {
     }
   } catch (e) {
     app.showToast(e instanceof Error ? e.message : '加载小队信息失败')
->>>>>>> 8c2225e3bc741cf1a70a00cf86cd60f5e64684d6
   } finally {
     loading.value = false
   }
