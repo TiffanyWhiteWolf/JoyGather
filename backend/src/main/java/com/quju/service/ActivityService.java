@@ -939,6 +939,7 @@ public class ActivityService {
         if (startAt == null || endAt == null || deadline == null) throw new IllegalStateException("活动开始、结束和报名截止时间不能为空");
         if (!endAt.isAfter(startAt)) throw new IllegalStateException("活动结束时间需要晚于开始时间");
         if (!startAt.isAfter(LocalDateTime.now())) throw new IllegalStateException("活动开始时间需要晚于当前时间");
+        if (!deadline.isAfter(LocalDateTime.now())) throw new IllegalStateException("报名截止时间需要晚于当前时间");
         if (deadline.isAfter(startAt)) throw new IllegalStateException("报名截止时间不能晚于活动开始时间");
     }
 
@@ -967,6 +968,7 @@ public class ActivityService {
         LocalDateTime deadline = LocalDateTime.parse(draft.getDeadline());
         if (!endAt.isAfter(startAt)) throw new IllegalStateException("活动结束时间需要晚于开始时间");
         if (!startAt.isAfter(LocalDateTime.now())) throw new IllegalStateException("活动开始时间需要晚于当前时间");
+        if (!deadline.isAfter(LocalDateTime.now())) throw new IllegalStateException("报名截止时间需要晚于当前时间");
         if (deadline.isAfter(startAt)) throw new IllegalStateException("报名截止时间不能晚于活动开始时间");
     }
 
