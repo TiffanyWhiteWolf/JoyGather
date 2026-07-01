@@ -136,7 +136,7 @@ public class UserService {
                     request.getNickname(), "低", "营业执照与门店认证", "待审核");
         }
         if (integrationService != null) integrationService.sendActivationEmail(request.getEmail().trim().toLowerCase(), activationToken);
-        return new AuthDtos.ActivationResponse(id, activationToken, "未激活");
+        return new AuthDtos.ActivationResponse(id, "未激活");
     }
 
     @Transactional

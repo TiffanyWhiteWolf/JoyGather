@@ -18,9 +18,10 @@ quju:
   amap:
     key:
   ai:
-    base-url:
-    api-key:
+    base-url: https://api.openai.com/v1
+    api-key: replace-with-server-side-api-key
     model: gpt-4o-mini
+    response-format: auto
   s3:
     endpoint:
     region: us-east-1

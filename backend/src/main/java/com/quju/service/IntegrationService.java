@@ -1,8 +1,11 @@
 package com.quju.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.quju.dto.CommonDtos;
 import com.quju.dto.PlannerRequest;
 import com.quju.dto.PlannerResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -10,12 +13,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.stereotype.Service;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URLEncoder;
@@ -25,6 +29,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+
+import javax.mail.internet.MimeMessage;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,6 +40,7 @@ public class IntegrationService {
     private final JdbcTemplate jdbc;
     private final ObjectProvider<JavaMailSender> mailSender;
     private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
 
     @Value("${quju.app.public-base-url:http://localhost:5173}")
     private String publicBaseUrl;
@@ -47,6 +54,8 @@ public class IntegrationService {
     private String aiApiKey;
     @Value("${quju.ai.model:gpt-4o-mini}")
     private String aiModel;
+    @Value("${quju.ai.response-format:auto}")
+    private String aiResponseFormat;
     @Value("${quju.amap.key:}")
     private String amapKey;
     @Value("${quju.nominatim.base-url:https://nominatim.openstreetmap.org}")
@@ -61,42 +70,33 @@ public class IntegrationService {
     private final Object nominatimLock = new Object();
     private volatile long lastNominatimRequestAt;
 
+    @Autowired
     public IntegrationService(JdbcTemplate jdbc, ObjectProvider<JavaMailSender> mailSender) {
+        this(jdbc, mailSender, defaultRestTemplate(), new ObjectMapper());
+    }
+
+    IntegrationService(JdbcTemplate jdbc, ObjectProvider<JavaMailSender> mailSender,
+                       RestTemplate restTemplate, ObjectMapper objectMapper) {
         this.jdbc = jdbc;
         this.mailSender = mailSender;
-        this.restTemplate = createRestTemplate();
-    }
-
-    private RestTemplate createRestTemplate() {
-        configureProxyFromEnvironment();
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(6000);
-        factory.setReadTimeout(8000);
-        return new RestTemplate(factory);
-    }
-
-    private void configureProxyFromEnvironment() {
-        String proxyUrl = System.getenv("HTTPS_PROXY");
-        if (proxyUrl == null || proxyUrl.trim().isEmpty()) proxyUrl = System.getenv("https_proxy");
-        if (proxyUrl == null || proxyUrl.trim().isEmpty()) return;
-        try {
-            URI proxy = URI.create(proxyUrl);
-            if (proxy.getHost() == null || proxy.getPort() < 1) return;
-            System.setProperty("https.proxyHost", proxy.getHost());
-            System.setProperty("https.proxyPort", String.valueOf(proxy.getPort()));
-            System.setProperty("http.proxyHost", proxy.getHost());
-            System.setProperty("http.proxyPort", String.valueOf(proxy.getPort()));
-            System.setProperty("http.nonProxyHosts", "localhost|127.*|[::1]");
-        } catch (Exception ignored) { }
+        this.restTemplate = restTemplate;
+        this.objectMapper = objectMapper;
     }
 
     public void sendActivationEmail(String email, String token) {
         String subject = "激活你的趣聚账号";
         String link = publicBaseUrl + "/auth?activate=" + token;
-        String body = "请打开以下链接激活账号：\n" + link + "\n如果不是你本人操作，请忽略。";
+        String htmlBody = "<html><body style=\"font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px;\">"
+                + "<h2 style=\"color:#ff6b45;\">趣聚</h2>"
+                + "<p>感谢注册趣聚！请点击下方按钮激活你的账号：</p>"
+                + "<p><a href=\"" + link + "\" style=\"display:inline-block;padding:12px 28px;background:#ff6b45;color:#fff;text-decoration:none;border-radius:24px;font-weight:bold;\">激活账号</a></p>"
+                + "<p style=\"color:#9ca3af;font-size:13px;\">或复制以下链接到浏览器：<br><a href=\"" + link + "\">" + link + "</a></p>"
+                + "<p style=\"color:#9ca3af;font-size:13px;\">如果不是你本人操作，请忽略此邮件。</p>"
+                + "</body></html>";
+        String textBody = "请打开以下链接激活账号：" + link + "\n如果不是你本人操作，请忽略。";
         String outboxId = DbSupport.id("mail");
         jdbc.update("insert into mail_outbox (id,recipient,subject,body,status) values (?,?,?,?,?)",
-                outboxId, email, subject, body, "待发送");
+                outboxId, email, subject, textBody, "待发送");
         if (smtpHost == null || smtpHost.trim().isEmpty()) {
             jdbc.update("update mail_outbox set status = '待配置', error = ? where id = ?", "SMTP 未配置，激活 token 已返回给本地开发环境", outboxId);
             logThirdParty("SMTP", "SEND_ACTIVATION", "DEGRADED", email, "", "SMTP 未配置", 0);
@@ -104,12 +104,13 @@ public class IntegrationService {
         }
         long started = System.currentTimeMillis();
         try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(mailFrom);
-            message.setTo(email);
-            message.setSubject(subject);
-            message.setText(body);
-            mailSender.getObject().send(message);
+            MimeMessage mimeMessage = mailSender.getObject().createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+            helper.setFrom(mailFrom);
+            helper.setTo(email);
+            helper.setSubject(subject);
+            helper.setText(textBody, htmlBody);
+            mailSender.getObject().send(mimeMessage);
             jdbc.update("update mail_outbox set status = '已发送', sent_at = now() where id = ?", outboxId);
             logThirdParty("SMTP", "SEND_ACTIVATION", "SUCCESS", email, "", "", elapsed(started));
         } catch (Exception ex) {
@@ -119,43 +120,60 @@ public class IntegrationService {
     }
 
     public ModerationResult moderateActivity(String activityId, String title, String summary, List<String> tags, int capacity) {
-        String text = (DbSupport.safe(title, "") + " " + DbSupport.safe(summary, "") + " " + DbSupport.join(tags)).toLowerCase(Locale.CHINA);
+        return moderateActivity(activityId, title, summary, summary, "", tags, "", "", capacity);
+    }
+
+    public ModerationResult moderateActivity(String activityId, String title, String summary, String description,
+                                             String category, List<String> tags, String safetyNote,
+                                             String location, int capacity) {
+        String requestSnapshot = moderationRequestSnapshot(title, summary, description, category, tags, safetyNote, location, capacity);
         if (aiBaseUrl == null || aiBaseUrl.trim().isEmpty() || aiApiKey == null || aiApiKey.trim().isEmpty()) {
-            ModerationResult fallback = ruleModeration(text, capacity, "AI 未配置，使用规则审核降级");
-            logThirdParty("AI", "MODERATE_ACTIVITY", "DEGRADED", title, fallback.reason, "AI 未配置", 0);
-            return fallback;
+            ModerationResult unavailable = new ModerationResult("INDETERMINATE", "中",
+                    "AI 审核服务尚未配置，活动已转入人工审核",
+                    Arrays.asList("AI_NOT_CONFIGURED"), "", "NOT_CONFIGURED",
+                    aiModel, null, "AI 未配置", 0, requestSnapshot);
+            logThirdParty("AI", "MODERATE_ACTIVITY", "DEGRADED", title, unavailable.reason, unavailable.errorMessage, 0);
+            return unavailable;
         }
         long started = System.currentTimeMillis();
         try {
-            Map<String, Object> payload = chatPayload("判断活动内容是否低风险。只返回 JSON，字段：result=LOW_RISK 或 REVIEW_REQUIRED，labels 数组，reason 字符串。活动：" + text);
+            Map<String, Object> payload = moderationPayload(requestSnapshot);
             HttpHeaders headers = aiHeaders();
             Map response = restTemplate.postForObject(aiBaseUrl + "/chat/completions", new HttpEntity<Map<String, Object>>(payload, headers), Map.class);
-            String raw = String.valueOf(response);
-            ModerationResult parsed = parseModeration(raw, capacity);
-            logThirdParty("AI", "MODERATE_ACTIVITY", "SUCCESS", title, parsed.reason, "", elapsed(started));
+            String raw = objectMapper.writeValueAsString(response);
+            String content = extractAssistantContent(response);
+            ModerationResult parsed = parseModeration(content, raw, capacity, elapsed(started), requestSnapshot);
+            logThirdParty("AI", "MODERATE_ACTIVITY", parsed.providerStatus, title, parsed.reason,
+                    parsed.errorMessage, parsed.durationMs);
             return parsed;
         } catch (Exception ex) {
-            ModerationResult fallback = ruleModeration(text, capacity, "AI 审核失败，转人工审核");
-            logThirdParty("AI", "MODERATE_ACTIVITY", "FAILED", title, fallback.reason, trim(ex.getMessage()), elapsed(started));
-            return fallback;
+            ModerationResult failed = new ModerationResult("ERROR", "中",
+                    "AI 审核服务异常，活动已转入人工审核",
+                    Arrays.asList("AI_SERVICE_ERROR"), "", "FAILED", aiModel, null,
+                    trim(ex.getMessage()), elapsed(started), requestSnapshot);
+            logThirdParty("AI", "MODERATE_ACTIVITY", "FAILED", title, failed.reason,
+                    failed.errorMessage, failed.durationMs);
+            return failed;
         }
     }
 
     public PlannerResponse generatePlan(PlannerRequest request) {
         if (aiBaseUrl == null || aiBaseUrl.trim().isEmpty() || aiApiKey == null || aiApiKey.trim().isEmpty()) {
             logThirdParty("AI", "GENERATE_PLAN", "DEGRADED", request.getTheme(), "", "AI 未配置", 0);
-            return localPlan(request);
+            return localPlan(request, false, "AI 未配置，已使用本地模板生成。");
         }
         long started = System.currentTimeMillis();
         try {
-            Map<String, Object> payload = chatPayload("为趣聚平台生成线下活动方案，返回简洁标题、简介、标签、流程和安全须知。主题：" + request.getTheme() + " 人数：" + request.getPeople() + " 风格：" + request.getStyle());
+            Map<String, Object> payload = plannerPayload(request);
             HttpHeaders headers = aiHeaders();
             Map response = restTemplate.postForObject(aiBaseUrl + "/chat/completions", new HttpEntity<Map<String, Object>>(payload, headers), Map.class);
-            logThirdParty("AI", "GENERATE_PLAN", "SUCCESS", request.getTheme(), String.valueOf(response), "", elapsed(started));
-            return localPlan(request);
+            String content = extractAiContent(response);
+            PlannerResponse plan = parsePlannerResponse(content, request);
+            logThirdParty("AI", "GENERATE_PLAN", "SUCCESS", request.getTheme(), content, "", elapsed(started));
+            return plan;
         } catch (Exception ex) {
             logThirdParty("AI", "GENERATE_PLAN", "FAILED", request.getTheme(), "", trim(ex.getMessage()), elapsed(started));
-            return localPlan(request);
+            return localPlan(request, false, "AI 生成暂时不可用，已使用本地模板生成。");
         }
     }
 
@@ -242,42 +260,337 @@ public class IntegrationService {
         return payload;
     }
 
-    private ModerationResult parseModeration(String raw, int capacity) {
-        String lower = raw == null ? "" : raw.toLowerCase(Locale.CHINA);
-        if (capacity > 50 || lower.contains("review_required") || lower.contains("高风险") || lower.contains("危险")) {
-            return new ModerationResult("REVIEW_REQUIRED", "中", "AI 判定需人工复核", Arrays.asList("AI_REVIEW"));
-        }
-        return new ModerationResult("LOW_RISK", "低", "AI 判定低风险", Collections.<String>emptyList());
-    }
+    private Map<String, Object> moderationPayload(String requestSnapshot) {
+        Map<String, Object> systemMessage = new HashMap<String, Object>();
+        systemMessage.put("role", "system");
+        systemMessage.put("content", "你是活动平台内容安全审核员。检查违法违规、低俗色情、暴力危险、毒品赌博、诈骗、仇恨骚扰和自伤风险。"
+                + "只有明确安全且无需人工判断时才能返回 LOW_RISK；存在风险或信息不足时返回 REVIEW_REQUIRED 或 INDETERMINATE。"
+                + "仅输出 JSON，格式示例：{\"decision\":\"LOW_RISK\",\"riskLevel\":\"LOW\",\"labels\":[],"
+                + "\"reason\":\"未发现内容安全风险\",\"confidence\":0.95}。");
+        Map<String, Object> userMessage = new HashMap<String, Object>();
+        userMessage.put("role", "user");
+        userMessage.put("content", requestSnapshot);
 
-    private ModerationResult ruleModeration(String text, int capacity, String fallbackReason) {
-        boolean capacityRisky = capacity > 50;
-        boolean keywordRisky = text.contains("危险") || text.contains("酒吧") || text.contains("凌晨") || text.contains("水上") || text.contains("夜间");
-        boolean risky = capacityRisky || keywordRisky;
+        Map<String, Object> schema = new HashMap<String, Object>();
+        schema.put("type", "object");
+        Map<String, Object> properties = new HashMap<String, Object>();
+        properties.put("decision", enumSchema("LOW_RISK", "REVIEW_REQUIRED", "INDETERMINATE"));
+        properties.put("riskLevel", enumSchema("LOW", "MEDIUM", "HIGH"));
+        Map<String, Object> labels = new HashMap<String, Object>();
+        labels.put("type", "array");
+        Map<String, Object> labelItem = new HashMap<String, Object>();
+        labelItem.put("type", "string");
+        labels.put("items", labelItem);
+        properties.put("labels", labels);
+        Map<String, Object> reason = new HashMap<String, Object>();
+        reason.put("type", "string");
+        properties.put("reason", reason);
+        Map<String, Object> confidence = new HashMap<String, Object>();
+        confidence.put("type", "number");
+        confidence.put("minimum", 0);
+        confidence.put("maximum", 1);
+        properties.put("confidence", confidence);
+        schema.put("properties", properties);
+        schema.put("required", Arrays.asList("decision", "riskLevel", "labels", "reason", "confidence"));
+        schema.put("additionalProperties", false);
 
-        String reason;
-        if (!risky) {
-            reason = "规则审核低风险";
-        } else if (capacityRisky && keywordRisky) {
-            reason = "报名人数超过 50 人且内容包含风险词，转入人工审核";
-        } else if (capacityRisky) {
-            reason = "报名人数超过 50 人，转入人工审核";
+        Map<String, Object> responseFormat = new HashMap<String, Object>();
+        if (useJsonObjectMode()) {
+            responseFormat.put("type", "json_object");
         } else {
-            reason = "活动内容包含风险词，转入人工审核";
+            Map<String, Object> jsonSchema = new HashMap<String, Object>();
+            jsonSchema.put("name", "activity_moderation");
+            jsonSchema.put("strict", true);
+            jsonSchema.put("schema", schema);
+            responseFormat.put("type", "json_schema");
+            responseFormat.put("json_schema", jsonSchema);
         }
 
-        return new ModerationResult(risky ? "REVIEW_REQUIRED" : "LOW_RISK", risky ? "中" : "低",
-                reason, risky ? Arrays.asList("RULE_REVIEW") : Collections.<String>emptyList());
+        Map<String, Object> payload = new HashMap<String, Object>();
+        payload.put("model", aiModel);
+        payload.put("messages", Arrays.asList(systemMessage, userMessage));
+        payload.put("temperature", 0);
+        payload.put("max_tokens", 800);
+        payload.put("response_format", responseFormat);
+        return payload;
     }
 
-    private PlannerResponse localPlan(PlannerRequest request) {
+    private Map<String, Object> plannerPayload(PlannerRequest request) {
+        Map<String, Object> system = new HashMap<String, Object>();
+        system.put("role", "system");
+        system.put("content",
+                "你是趣聚平台的线下活动策划助手。请输出可以直接展示给用户的活动方案。"
+                        + "必须只返回 JSON 对象，不要 Markdown，不要代码块。"
+                        + "JSON 字段固定为：title 字符串，introduction 字符串，tags 字符串数组，schedule 字符串数组，safetyNote 字符串。");
+
+        Map<String, Object> user = new HashMap<String, Object>();
+        user.put("role", "user");
+        user.put("content",
+                "活动主题：" + DbSupport.safe(request.getTheme(), "")
+                        + "\n预计人数：" + DbSupport.safe(request.getPeople(), "")
+                        + "\n活动氛围：" + DbSupport.safe(request.getStyle(), "")
+                        + "\n要求：标题要具体、有吸引力；简介 80-140 字；标签 3-5 个；流程 4-6 步；安全须知贴合活动场景。");
+
+        Map<String, Object> payload = new HashMap<String, Object>();
+        payload.put("model", aiModel);
+        payload.put("messages", Arrays.asList(system, user));
+        payload.put("temperature", 0.7);
+        return payload;
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractAiContent(Map response) {
+        if (response == null) throw new IllegalStateException("AI 返回为空");
+        Object choicesValue = response.get("choices");
+        if (choicesValue instanceof List && !((List) choicesValue).isEmpty()) {
+            Object choiceValue = ((List) choicesValue).get(0);
+            Map<String, Object> choice = asMap(choiceValue);
+            Map<String, Object> message = asMap(choice.get("message"));
+            String content = contentToText(message.get("content"));
+            if (!content.trim().isEmpty()) return content;
+            content = contentToText(choice.get("text"));
+            if (!content.trim().isEmpty()) return content;
+        }
+        String content = contentToText(response.get("content"));
+        if (!content.trim().isEmpty()) return content;
+        content = contentToText(response.get("output_text"));
+        if (!content.trim().isEmpty()) return content;
+        throw new IllegalStateException("AI 返回中没有可解析内容");
+    }
+
+    private String contentToText(Object value) {
+        if (value == null) return "";
+        if (value instanceof String) return (String) value;
+        if (value instanceof List) {
+            StringBuilder builder = new StringBuilder();
+            for (Object item : (List) value) {
+                String text = contentToText(item);
+                if (!text.trim().isEmpty()) builder.append(text);
+            }
+            return builder.toString();
+        }
+        if (value instanceof Map) {
+            Map<String, Object> map = asMap(value);
+            String text = contentToText(map.get("text"));
+            if (!text.trim().isEmpty()) return text;
+            return contentToText(map.get("content"));
+        }
+        return String.valueOf(value);
+    }
+
+    private PlannerResponse parsePlannerResponse(String content, PlannerRequest request) throws IOException {
+        String json = stripJsonWrapper(content);
+        JsonNode root = objectMapper.readTree(json);
+        if (!root.isObject()) throw new IllegalStateException("AI 返回不是 JSON 对象");
+
+        PlannerResponse fallback = localPlan(request, false, "");
+        String title = firstText(root, fallback.getTitle(), "title", "name");
+        String introduction = firstText(root, fallback.getIntroduction(), "introduction", "summary", "description", "intro");
+        List<String> tags = stringArray(root, "tags");
+        if (tags.isEmpty()) tags = fallback.getTags();
+        List<String> schedule = stringArray(root, "schedule", "agenda", "steps", "flow");
+        if (schedule.isEmpty()) schedule = fallback.getSchedule();
+        String safetyNote = firstText(root, fallback.getSafetyNote(), "safetyNote", "safety_note", "safety", "notice");
+
+        boolean hasMeaningfulAiContent = !title.equals(fallback.getTitle())
+                || !introduction.equals(fallback.getIntroduction())
+                || !schedule.equals(fallback.getSchedule());
+        if (!hasMeaningfulAiContent) throw new IllegalStateException("AI 返回缺少有效方案字段");
+        return new PlannerResponse(title, introduction, tags, schedule, safetyNote, true, "AI 已生成活动方案。");
+    }
+
+    private String stripJsonWrapper(String content) {
+        String text = DbSupport.safe(content, "").trim();
+        if (text.startsWith("```")) {
+            text = text.replaceFirst("^```[a-zA-Z]*\\s*", "");
+            int fence = text.lastIndexOf("```");
+            if (fence >= 0) text = text.substring(0, fence).trim();
+        }
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start >= 0 && end > start) return text.substring(start, end + 1);
+        return text;
+    }
+
+    private String firstText(JsonNode root, String fallback, String... names) {
+        for (String name : names) {
+            JsonNode node = root.get(name);
+            if (node != null && node.isTextual() && !node.asText().trim().isEmpty()) return node.asText().trim();
+        }
+        return fallback;
+    }
+
+    private List<String> stringArray(JsonNode root, String... names) {
+        for (String name : names) {
+            JsonNode node = root.get(name);
+            List<String> values = stringArray(node);
+            if (!values.isEmpty()) return values;
+        }
+        return Collections.emptyList();
+    }
+
+    private List<String> stringArray(JsonNode node) {
+        if (node == null || node.isNull()) return Collections.emptyList();
+        List<String> values = new ArrayList<String>();
+        if (node.isArray()) {
+            for (JsonNode item : node) {
+                String text = nodeToText(item);
+                if (!text.isEmpty()) values.add(text);
+            }
+        } else {
+            String text = nodeToText(node);
+            if (!text.isEmpty()) values.add(text);
+        }
+        return values;
+    }
+
+    private String nodeToText(JsonNode node) {
+        if (node == null || node.isNull()) return "";
+        if (node.isTextual()) return node.asText().trim();
+        if (node.isObject()) {
+            StringBuilder builder = new StringBuilder();
+            appendNodeField(builder, node, "time");
+            appendNodeField(builder, node, "title");
+            appendNodeField(builder, node, "step");
+            appendNodeField(builder, node, "content");
+            appendNodeField(builder, node, "description");
+            return builder.toString().trim();
+        }
+        return node.asText("").trim();
+    }
+
+    private void appendNodeField(StringBuilder builder, JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || !value.isValueNode()) return;
+        String text = value.asText("").trim();
+        if (text.isEmpty()) return;
+        if (builder.length() > 0) builder.append(" ");
+        builder.append(text);
+    }
+
+    private boolean useJsonObjectMode() {
+        if ("json_object".equalsIgnoreCase(aiResponseFormat)) return true;
+        if ("json_schema".equalsIgnoreCase(aiResponseFormat)) return false;
+        return aiBaseUrl != null && aiBaseUrl.toLowerCase(Locale.ROOT).contains("deepseek");
+    }
+
+    private Map<String, Object> enumSchema(String... values) {
+        Map<String, Object> schema = new HashMap<String, Object>();
+        schema.put("type", "string");
+        schema.put("enum", Arrays.asList(values));
+        return schema;
+    }
+
+    private String moderationRequestSnapshot(String title, String summary, String description, String category,
+                                             List<String> tags, String safetyNote, String location, int capacity) {
+        Map<String, Object> content = new HashMap<String, Object>();
+        content.put("title", DbSupport.safe(title, ""));
+        content.put("summary", DbSupport.safe(summary, ""));
+        content.put("description", DbSupport.safe(description, ""));
+        content.put("category", DbSupport.safe(category, ""));
+        content.put("tags", tags == null ? Collections.emptyList() : tags);
+        content.put("safetyNote", DbSupport.safe(safetyNote, ""));
+        content.put("location", DbSupport.safe(location, ""));
+        content.put("capacity", capacity);
+        try {
+            return objectMapper.writeValueAsString(content);
+        } catch (Exception ex) {
+            return String.valueOf(content);
+        }
+    }
+
+    private String extractAssistantContent(Map response) {
+        if (response == null) throw new IllegalStateException("AI 返回为空");
+        Object choicesValue = response.get("choices");
+        if (!(choicesValue instanceof List) || ((List) choicesValue).isEmpty()) {
+            throw new IllegalStateException("AI 返回缺少 choices");
+        }
+        Object first = ((List) choicesValue).get(0);
+        Map<String, Object> choice = asMap(first);
+        Map<String, Object> message = asMap(choice.get("message"));
+        Object content = message.get("content");
+        if (content == null || String.valueOf(content).trim().isEmpty()) {
+            throw new IllegalStateException("AI 返回缺少审核内容");
+        }
+        return String.valueOf(content).trim();
+    }
+
+    private ModerationResult parseModeration(String content, String raw, int capacity, int durationMs,
+                                             String requestSnapshot) {
+        try {
+            String json = stripCodeFence(content);
+            JsonNode node = objectMapper.readTree(json);
+            String decision = requiredText(node, "decision");
+            String riskLevel = requiredText(node, "riskLevel");
+            String reason = requiredText(node, "reason");
+            JsonNode confidenceNode = node.get("confidence");
+            if (confidenceNode == null || !confidenceNode.isNumber()) throw new IllegalStateException("confidence 缺失");
+            double confidence = confidenceNode.asDouble();
+            if (confidence < 0 || confidence > 1) throw new IllegalStateException("confidence 超出范围");
+            JsonNode labelsNode = node.get("labels");
+            if (labelsNode == null || !labelsNode.isArray()) throw new IllegalStateException("labels 缺失");
+            List<String> labels = new ArrayList<String>();
+            for (JsonNode label : labelsNode) {
+                if (label.isTextual() && !label.asText().trim().isEmpty()) labels.add(label.asText().trim());
+            }
+            if (!Arrays.asList("LOW_RISK", "REVIEW_REQUIRED", "INDETERMINATE").contains(decision)) {
+                throw new IllegalStateException("未知审核结论");
+            }
+            if (capacity > 50) {
+                decision = "REVIEW_REQUIRED";
+                if (!labels.contains("LARGE_EVENT")) labels.add("LARGE_EVENT");
+                reason = "报名人数超过 50 人，需人工复核；AI 结论：" + reason;
+            } else if ("LOW_RISK".equals(decision) && (!labels.isEmpty() || confidence < 0.8D)) {
+                decision = "INDETERMINATE";
+                reason = confidence < 0.8D ? "AI 置信度不足，需人工复核：" + reason : "AI 返回风险标签，需人工复核：" + reason;
+            }
+            if (!"LOW_RISK".equals(decision) && labels.isEmpty()) labels.add("AI_REVIEW");
+            String risk = riskName(riskLevel);
+            if (!"LOW_RISK".equals(decision) && "低".equals(risk)) risk = "中";
+            return new ModerationResult(decision, risk, reason, labels, raw,
+                    "SUCCESS", aiModel, confidence, "", durationMs, requestSnapshot);
+        } catch (Exception ex) {
+            return new ModerationResult("INDETERMINATE", "中",
+                    "AI 返回结果无法可靠解析，活动已转入人工审核",
+                    Arrays.asList("AI_INVALID_RESPONSE"), raw, "INVALID_RESPONSE", aiModel,
+                    null, trim(ex.getMessage()), durationMs, requestSnapshot);
+        }
+    }
+
+    private String requiredText(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || !value.isTextual() || value.asText().trim().isEmpty()) {
+            throw new IllegalStateException(field + " 缺失");
+        }
+        return value.asText().trim();
+    }
+
+    private String stripCodeFence(String value) {
+        String result = value == null ? "" : value.trim();
+        if (result.startsWith("```")) {
+            int firstBreak = result.indexOf('\n');
+            int lastFence = result.lastIndexOf("```");
+            if (firstBreak >= 0 && lastFence > firstBreak) result = result.substring(firstBreak + 1, lastFence).trim();
+        }
+        return result;
+    }
+
+    private String riskName(String value) {
+        if ("HIGH".equalsIgnoreCase(value) || "高".equals(value)) return "高";
+        if ("MEDIUM".equalsIgnoreCase(value) || "中".equals(value)) return "中";
+        return "低";
+    }
+
+    private PlannerResponse localPlan(PlannerRequest request, boolean aiGenerated, String notice) {
         String theme = DbSupport.safe(request.getTheme(), "城市活动");
         return new PlannerResponse(
                 theme.length() > 18 ? theme.substring(0, 18) + "计划" : theme + "计划",
                 "围绕「" + theme + "」设计一场新朋友也能自然加入的线下活动。",
                 Arrays.asList("城市探索", DbSupport.safe(request.getStyle(), "轻松社交"), DbSupport.safe(request.getPeople(), "12-20 人")),
                 Arrays.asList("集合签到与破冰", "主题体验与分组任务", "交流分享与合影", "活动结束与后续联系"),
-                "发布前请确认集合地点、天气预案、紧急联系人和交通返程安排。"
+                "发布前请确认集合地点、天气预案、紧急联系人和交通返程安排。",
+                aiGenerated,
+                notice
         );
     }
 
@@ -560,10 +873,19 @@ public class IntegrationService {
         return value instanceof Map ? (Map<String, Object>) value : Collections.<String, Object>emptyMap();
     }
 
-    public void saveAiAudit(String activityId, ModerationResult result, String raw) {
+    public void saveAiAudit(String activityId, ModerationResult result) {
         if (activityId == null) return;
-        jdbc.update("insert into ai_audit_logs (id,activity_id,result,risk_labels,reason,raw_response) values (?,?,?,?,?,?)",
-                DbSupport.id("ai"), activityId, result.result, DbSupport.join(result.labels), result.reason, raw);
+        jdbc.update("insert into ai_audit_logs "
+                        + "(id,activity_id,result,risk_level,risk_labels,reason,confidence,provider,model,provider_status,"
+                        + "request_snapshot,raw_response,error_message,duration_ms) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                DbSupport.id("ai"), activityId, result.result, result.risk, DbSupport.join(result.labels),
+                result.reason, result.confidence, "OPENAI_COMPATIBLE", result.model, result.providerStatus,
+                trimAudit(result.requestSnapshot), trimAudit(result.rawResponse), trim(result.errorMessage), result.durationMs);
+    }
+
+    @Deprecated
+    public void saveAiAudit(String activityId, ModerationResult result, String raw) {
+        saveAiAudit(activityId, result);
     }
 
     public void logThirdParty(String provider, String operation, String status, String requestSummary, String responseSummary, String error, int durationMs) {
@@ -580,16 +902,67 @@ public class IntegrationService {
         return value.length() > 900 ? value.substring(0, 900) : value;
     }
 
+    private String trimAudit(String value) {
+        if (value == null) return "";
+        return value.length() > 12000 ? value.substring(0, 12000) : value;
+    }
+
+    private static RestTemplate defaultRestTemplate() {
+        configureProxyFromEnvironment();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5000);
+        factory.setReadTimeout(15000);
+        return new RestTemplate(factory);
+    }
+
+    private static void configureProxyFromEnvironment() {
+        String proxyUrl = System.getenv("HTTPS_PROXY");
+        if (proxyUrl == null || proxyUrl.trim().isEmpty()) proxyUrl = System.getenv("https_proxy");
+        if (proxyUrl == null || proxyUrl.trim().isEmpty()) return;
+        try {
+            URI proxy = URI.create(proxyUrl);
+            if (proxy.getHost() == null || proxy.getPort() < 1) return;
+            System.setProperty("https.proxyHost", proxy.getHost());
+            System.setProperty("https.proxyPort", String.valueOf(proxy.getPort()));
+            System.setProperty("http.proxyHost", proxy.getHost());
+            System.setProperty("http.proxyPort", String.valueOf(proxy.getPort()));
+            System.setProperty("http.nonProxyHosts", "localhost|127.*|[::1]");
+        } catch (Exception ignored) {
+            // Invalid proxy environment variables should not prevent application startup.
+        }
+    }
+
     public static class ModerationResult {
         public final String result;
         public final String risk;
         public final String reason;
         public final List<String> labels;
+        public final String rawResponse;
+        public final String providerStatus;
+        public final String model;
+        public final Double confidence;
+        public final String errorMessage;
+        public final int durationMs;
+        public final String requestSnapshot;
+
         public ModerationResult(String result, String risk, String reason, List<String> labels) {
+            this(result, risk, reason, labels, "", "LOCAL", "", null, "", 0, "");
+        }
+
+        public ModerationResult(String result, String risk, String reason, List<String> labels,
+                                String rawResponse, String providerStatus, String model, Double confidence,
+                                String errorMessage, int durationMs, String requestSnapshot) {
             this.result = result;
             this.risk = risk;
             this.reason = reason;
             this.labels = labels;
+            this.rawResponse = rawResponse;
+            this.providerStatus = providerStatus;
+            this.model = model;
+            this.confidence = confidence;
+            this.errorMessage = errorMessage;
+            this.durationMs = durationMs;
+            this.requestSnapshot = requestSnapshot;
         }
     }
 }

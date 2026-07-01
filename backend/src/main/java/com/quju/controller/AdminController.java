@@ -5,6 +5,7 @@ import com.quju.dto.ActivityDto;
 import com.quju.dto.AdminDtos;
 import com.quju.dto.DashboardDto;
 import com.quju.dto.ReviewTaskDto;
+import com.quju.dto.ReviewDetailDto;
 import com.quju.dto.TeamDto;
 import com.quju.dto.UserDto;
 import com.quju.service.ActivityService;
@@ -47,9 +48,17 @@ public class AdminController {
     @GetMapping("/reviews")
     public ApiResponse<List<ReviewTaskDto>> reviews(@RequestParam(required = false) String query,
                                                     @RequestParam(required = false) String type,
+                                                    @RequestParam(required = false) String status,
                                                     @RequestHeader(value = "Authorization", required = false) String authorization) {
         userService.requireAdmin(authorization);
-        return ApiResponse.success(adminService.reviews(query, type));
+        return ApiResponse.success(adminService.reviews(query, type, status));
+    }
+
+    @GetMapping("/reviews/{id}")
+    public ApiResponse<ReviewDetailDto> reviewDetail(@PathVariable String id,
+                                                     @RequestHeader(value = "Authorization", required = false) String authorization) {
+        userService.requireAdmin(authorization);
+        return ApiResponse.success(adminService.reviewDetail(id));
     }
 
     @PostMapping("/reviews/{id}/approve")

@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -220,6 +221,43 @@ public class MessageService {
         };
     }
 
+    @Transactional
+    public Map<String, String> findOrCreateConversation(String userId, String targetUserId) {
+        if (userId == null || targetUserId == null || userId.equals(targetUserId)) {
+            throw new IllegalStateException("无效的目标用户");
+        }
+        // 查找已有会话
+        List<String> existing = jdbc.queryForList(
+            "select c.id from conversations c " +
+            "join conversation_participants cp1 on cp1.conversation_id = c.id and cp1.user_id = ? " +
+            "join conversation_participants cp2 on cp2.conversation_id = c.id and cp2.user_id = ? " +
+            "where c.type = '好友'",
+            String.class, userId, targetUserId);
+        if (!existing.isEmpty()) {
+            Map<String, String> result = new LinkedHashMap<>();
+            result.put("conversationId", existing.get(0));
+            return result;
+        }
+        // 查询目标用户信息
+        List<Map<String, Object>> targetRows = jdbc.queryForList(
+            "select nickname, avatar from users where id = ?", targetUserId);
+        if (targetRows.isEmpty()) throw new IllegalStateException("目标用户不存在");
+        Map<String, Object> target = targetRows.get(0);
+        // 创建新会话
+        String convId = DbSupport.id("cv");
+        jdbc.update("insert into conversations (id,name,avatar,type,friend_user_id,unread,last_message,last_time,online) values (?,?,?,?,?,?,?,?,?)",
+            convId, String.valueOf(target.get("nickname")), String.valueOf(target.get("avatar")),
+            "好友", targetUserId, 0, "", "刚刚", false);
+        jdbc.update("insert into conversation_participants (conversation_id,user_id) values (?,?),(?,?)",
+            convId, userId, convId, targetUserId);
+        // 插入 SYSTEM 分界消息，使得非好友也可以发送最多 5 条消息
+        jdbc.update("insert into messages (id,conversation_id,sender_id,content,message_type,mine,read_flag) values (?,?,?,?,?,?,?)",
+            DbSupport.id("ms"), convId, userId, "", "SYSTEM", false, true);
+        Map<String, String> result = new LinkedHashMap<>();
+        result.put("conversationId", convId);
+        return result;
+    }
+
     private void requireParticipant(String conversationId, String userId) {
         Integer count = jdbc.queryForObject("select count(*) from conversation_participants where conversation_id = ? and user_id = ?", Integer.class, conversationId, userId);
         if (count == null || count == 0) throw new IllegalStateException("非好友且非同队关系不可发送消息");
@@ -243,7 +281,13 @@ public class MessageService {
             if (others.isEmpty()) throw new IllegalStateException("非好友且非同队关系不可发送消息");
             Integer count = jdbc.queryForObject("select count(*) from friendships where user_id = ? and friend_id = ?", Integer.class, userId, others.get(0));
             if (count == null || count == 0) {
-                // 非好友：最多允许发送 5 条消息（只统计解除好友关系之后的消息）
+                Integer boundaryCount = jdbc.queryForObject(
+                    "select count(*) from messages where conversation_id = ? and message_type = 'SYSTEM'",
+                    Integer.class, conversationId);
+                if (boundaryCount == null || boundaryCount == 0) {
+                    throw new IllegalStateException("你们还不是好友，不能发送消息");
+                }
+                // 解除好友后最多允许发送 5 条消息，只统计分界消息之后的内容。
                 Integer msgCount = jdbc.queryForObject(
                     "select count(*) from messages where conversation_id = ? and sender_id = ? " +
                     "and message_type != 'SYSTEM' " +

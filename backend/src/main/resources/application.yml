@@ -48,6 +48,7 @@ quju:
     base-url: ${QUJU_AI_BASE_URL:}
     api-key: ${QUJU_AI_API_KEY:}
     model: ${QUJU_AI_MODEL:gpt-4o-mini}
+    response-format: ${QUJU_AI_RESPONSE_FORMAT:auto}
   s3:
     endpoint: ${QUJU_S3_ENDPOINT:}
     region: ${QUJU_S3_REGION:us-east-1}

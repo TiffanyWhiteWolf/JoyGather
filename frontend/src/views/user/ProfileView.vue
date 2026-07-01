@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Building2, CalendarDays, Camera, CheckCircle2, ChevronRight, Copy, FileCheck, FileText, Heart, MapPin, QrCode, Send, Settings, ShieldAlert, Star, Trash2, Users, X } from 'lucide-vue-next'
+import { Building2, CalendarDays, Camera, CheckCircle2, ChevronRight, Copy, FileCheck, FileText, Heart, MapPin, Navigation, QrCode, Send, Settings, ShieldAlert, Star, Trash2, Users, X } from 'lucide-vue-next'
 import QRCode from 'qrcode'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -32,6 +32,7 @@ interface CheckinCodeResponse {
   code: string
   url: string
   expiresAt: string
+  locationRequired: boolean
 }
 
 interface RegistrationManagementRow {
@@ -56,8 +57,10 @@ const editing = ref(false)
 const activeTab = ref<ProfileTab>('我的活动')
 const saving = ref(false)
 const uploadingAvatar = ref(false)
+const uploadingLicense = ref(false)
 const error = ref('')
 const avatarInput = ref<HTMLInputElement | null>(null)
+const licenseInput = ref<HTMLInputElement | null>(null)
 const merchantApplications = ref<MerchantApplication[]>([])
 const merchantSaving = ref(false)
 const merchantSubmitting = ref(false)
@@ -72,6 +75,7 @@ const checkinUrl = ref('')
 const checkinQr = ref('')
 const checkinRows = ref<RegistrationManagementRow[]>([])
 const registrationLoading = ref(false)
+const checkinLocationRequired = ref(false)
 const cancelOpen = ref(false)
 const cancelling = ref(false)
 const cancelError = ref('')
@@ -97,6 +101,10 @@ const birthdayDisplay = computed(() => {
   return `${year}年${month}月${day}日`
 })
 const latestMerchantApplication = computed(() => merchantApplications.value[0] ?? null)
+const licenseIsImage = computed(() => {
+  const name = merchantForm.licenseName || merchantForm.licenseUrl || ''
+  return /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(name)
+})
 const customInterestTags = computed(() => parseInterestTags().filter(tag => !suggestedInterests.includes(tag)))
 const checkedInCount = computed(() => checkinRows.value.filter(item => item.status === '已签到').length)
 const registeredCount = computed(() => checkinRows.value.filter(item => item.status === '已报名' || item.status === '已签到').length)
@@ -130,8 +138,8 @@ onMounted(async () => {
       merchantName: user.merchantName || latestApplication?.merchantName || '',
       merchantNickname: user.merchantNickname || user.merchantName || '',
       merchantFields: (user.merchantFields || []).join('、'),
-      licenseName: '',
-      licenseUrl: '',
+      licenseName: latestApplication?.licenseName || '',
+      licenseUrl: latestApplication?.licenseUrl || '',
     })
     activities.value = rows
   } catch {
@@ -299,7 +307,7 @@ async function generateCheckinCode(activity: Activity) {
   checkinOpen.value = true
   checkinLoading.value = true
   try {
-    const result = await apiPost<CheckinCodeResponse>(`/activities/${activity.id}/checkins/qr`, { locationRequired: false })
+    const result = await apiPost<CheckinCodeResponse>(`/activities/${activity.id}/checkins/qr`, { locationRequired: checkinLocationRequired.value })
     const fullUrl = new URL(result.url, window.location.origin).toString()
     checkinCode.value = result
     checkinUrl.value = fullUrl
@@ -342,6 +350,26 @@ async function uploadAvatar(event: Event) {
     error.value = err instanceof Error ? err.message : '头像上传失败'
   } finally {
     uploadingAvatar.value = false
+    input.value = ''
+  }
+}
+
+async function uploadLicenseFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  merchantError.value = ''
+  uploadingLicense.value = true
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const uploaded = await apiUpload<FileResponse>('/files/upload', form)
+    merchantForm.licenseName = uploaded.originalName
+    merchantForm.licenseUrl = uploaded.url
+  } catch (err) {
+    merchantError.value = err instanceof Error ? err.message : '营业凭证上传失败'
+  } finally {
+    uploadingLicense.value = false
     input.value = ''
   }
 }
@@ -393,6 +421,7 @@ async function cancelAccount() {
 <template>
   <div v-if="currentUser" class="container profile-page">
     <input ref="avatarInput" class="hidden-file" type="file" accept="image/*" @change="uploadAvatar" />
+    <input ref="licenseInput" class="hidden-file" type="file" accept="image/*,.pdf" @change="uploadLicenseFile" />
 
     <section class="profile-cover">
       <div class="profile-pattern"></div>
@@ -450,7 +479,7 @@ async function cancelAccount() {
           <span v-for="tag in customInterestTags" :key="tag" class="custom-tag"># {{ tag }}<button type="button" class="custom-tag-remove" @click="removeCustomInterest(tag)">&times;</button></span>
         </div>
         <div v-if="showCustomInterest" class="custom-interest-row">
-          <input v-model="customInterestInput" class="input" placeholder="输入自定义兴趣，回车添加" @keyup.enter="addCustomInterest" @keyup.esc="showCustomInterest=false" />
+          <input v-model="customInterestInput" class="input" @keyup.enter="addCustomInterest" @keyup.esc="showCustomInterest=false" />
           <button type="button" class="btn btn-primary" @click="addCustomInterest">添加</button>
         </div>
       </label>
@@ -471,7 +500,7 @@ async function cancelAccount() {
         <template v-if="activeTab==='我的活动'">
           <div v-if="activities.length" class="activity-grid managed-activities">
             <div v-for="activity in activities" :key="activity.id" class="managed-activity">
-              <ActivityCard :activity="activity" />
+              <ActivityCard :activity="activity" show-status />
               <div class="activity-tools">
                 <span>{{ activity.status }}</span>
                 <button @click="openCheckinManagement(activity)"><QrCode :size="15" />签到管理</button>
@@ -487,7 +516,6 @@ async function cancelAccount() {
               <div>
                 <span class="eyebrow">MERCHANT</span>
                 <h2>商家认证与资料管理</h2>
-                <p>商家资料与个人资料分开维护；提交认证后由管理员在审核中心处理。</p>
               </div>
               <i>{{ merchantStatusText }}</i>
             </div>
@@ -509,7 +537,17 @@ async function cancelAccount() {
               </div>
               <div class="merchant-form-card">
                 <h3>认证申请</h3>
-                <label>营业凭证文件<input class="input" type="file" accept="image/*,.pdf" @change="merchantForm.licenseName=($event.target as HTMLInputElement).files?.[0]?.name||''" /></label>
+                <label>营业凭证文件
+                  <div class="license-upload-row">
+                    <button type="button" class="btn btn-outline btn-sm" :disabled="uploadingLicense" @click="licenseInput?.click()">
+                      <FileCheck :size="15" />{{ uploadingLicense ? '上传中...' : (merchantForm.licenseName || '选择文件并上传') }}
+                    </button>
+                  </div>
+                  <div v-if="merchantForm.licenseUrl" class="license-preview">
+                    <img v-if="licenseIsImage" :src="merchantForm.licenseUrl" alt="营业执照预览" />
+                    <div v-else class="license-file-icon"><FileText :size="28" /><span>{{ merchantForm.licenseName }}</span></div>
+                  </div>
+                </label>
                 <label>凭证 URL<input v-model.trim="merchantForm.licenseUrl" class="input" placeholder="也可粘贴营业执照或授权书链接" /></label>
                 <p v-if="latestMerchantApplication" class="merchant-status">最近申请：{{ latestMerchantApplication.status }}<span v-if="latestMerchantApplication.reason"> · {{ latestMerchantApplication.reason }}</span></p>
                 <p v-else class="merchant-status">尚未提交商家认证申请。</p>
@@ -565,6 +603,10 @@ async function cancelAccount() {
           </button>
           <button class="btn btn-outline" :disabled="registrationLoading" @click="checkinActivity && loadCheckinRows(checkinActivity.id)">刷新名单</button>
         </div>
+        <label class="checkin-location-toggle">
+          <input type="checkbox" v-model="checkinLocationRequired" />
+          <span>要求位置校验（参与者需在活动现场附近才能签到）</span>
+        </label>
         <div v-if="checkinLoading" class="qr-loading">正在生成签到二维码...</div>
         <div v-else-if="checkinCode" class="qr-panel">
           <img class="qr-image" :src="checkinQr" alt="签到二维码" />
@@ -573,6 +615,7 @@ async function cancelAccount() {
             <span><b>有效期至</b>{{ formatDateTime(checkinCode.expiresAt) }}</span>
           </div>
           <button class="btn btn-outline" @click="copyCheckinUrl"><Copy :size="16" />复制签到链接</button>
+          <p v-if="checkinCode.locationRequired" class="checkin-location-hint"><Navigation :size="14" />此签到码要求位置校验，参与者需在活动现场 500 米范围内。</p>
         </div>
         <section class="registration-panel">
           <h3>报名与签到状态</h3>
@@ -688,6 +731,13 @@ async function cancelAccount() {
 .merchant-form-card{padding:16px;border:1px solid var(--color-line);border-radius:12px;background:var(--color-bg)}
 .merchant-form-card h3{margin:0 0 14px}
 .merchant-form-card label{display:flex;flex-direction:column;gap:6px;margin-top:11px;font-size:11px;font-weight:800}
+.license-upload-row{display:flex;align-items:center;gap:10px}
+.license-upload-row .btn{white-space:nowrap}
+.license-preview{margin-top:10px;padding:10px;border:1px solid var(--color-line);border-radius:8px;background:#fff}
+.license-preview img{max-width:100%;max-height:200px;border-radius:6px;object-fit:contain;display:block}
+.license-file-icon{display:flex;align-items:center;gap:10px;padding:12px;background:var(--color-bg);border-radius:6px}
+.license-file-icon svg{color:var(--color-primary);flex-shrink:0}
+.license-file-icon span{font-size:12px;color:var(--color-ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .merchant-form-card .btn{width:100%;margin-top:14px;justify-content:center}
 .merchant-status{min-height:36px;margin:12px 0 0!important;color:var(--color-ink-soft);font-size:11px!important}
 .merchant-presets{margin-bottom:2px}
@@ -718,6 +768,8 @@ async function cancelAccount() {
 .checkin-summary span{font-size:10px;color:var(--color-ink-soft);font-weight:800}
 .checkin-actions{display:flex;gap:8px;margin-bottom:12px}
 .checkin-actions .btn{justify-content:center}
+.checkin-location-toggle{display:flex;align-items:center;gap:7px;margin-bottom:12px;font-size:11px;color:var(--color-ink-soft);cursor:pointer}
+.checkin-location-toggle input[type=checkbox]{width:15px;height:15px;accent-color:var(--color-primary)}
 .qr-loading{padding:32px;border:1px dashed var(--color-line);border-radius:12px;color:var(--color-ink-soft);text-align:center}
 .qr-panel{padding:14px;border:1px solid var(--color-line);border-radius:12px;background:#fff}
 .qr-image{display:block;width:220px;height:220px;margin:4px auto 16px;border:1px solid var(--color-line);border-radius:12px}
@@ -732,6 +784,7 @@ async function cancelAccount() {
 .registration-row div{min-width:0}
 .registration-row b{display:block;font-size:12px}
 .registration-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-ink-soft);font-size:10px}
+.checkin-location-hint{display:flex;align-items:center;gap:6px;margin:10px 0 0;color:var(--color-mint);font-size:10px;font-weight:800}
 .status-tag{padding:6px 8px;border-radius:8px;background:var(--color-primary-soft);color:var(--color-primary);font-size:10px;font-style:normal;font-weight:800;white-space:nowrap}
 .status-tag.done{background:var(--color-mint-soft);color:var(--color-mint)}
 .status-tag.waiting{background:#fff5d8;color:#9b6b00}

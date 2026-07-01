@@ -14,14 +14,17 @@ public class ActivityOpsDtos {
         private String code;
         private String url;
         private String expiresAt;
-        public CheckinCodeResponse(String code, String url, String expiresAt) {
+        private boolean locationRequired;
+        public CheckinCodeResponse(String code, String url, String expiresAt, boolean locationRequired) {
             this.code = code;
             this.url = url;
             this.expiresAt = expiresAt;
+            this.locationRequired = locationRequired;
         }
         public String getCode() { return code; }
         public String getUrl() { return url; }
         public String getExpiresAt() { return expiresAt; }
+        public boolean isLocationRequired() { return locationRequired; }
     }
 
     public static class RegistrationManagementDto {

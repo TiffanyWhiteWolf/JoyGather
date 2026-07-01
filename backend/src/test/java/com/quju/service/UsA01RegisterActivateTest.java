@@ -25,7 +25,8 @@ class UsA01RegisterActivateTest extends TestBase {
         AuthDtos.ActivationResponse resp = userService.register(req);
         assertNotNull(resp.getUserId());
         assertEquals("未激活", resp.getStatus());
-        assertNotNull(resp.getActivationToken());
+        String token = jdbc.queryForObject("select activation_token from users where id = ?", String.class, resp.getUserId());
+        assertNotNull(token);
     }
 
     @Test
@@ -34,7 +35,8 @@ class UsA01RegisterActivateTest extends TestBase {
         AuthDtos.RegisterRequest req = registerRequest("activate@test.com", USER_PASS, USER_PASS, "可激活用户");
         AuthDtos.ActivationResponse resp = userService.register(req);
 
-        UserDto activated = userService.activate(resp.getActivationToken());
+        String token = jdbc.queryForObject("select activation_token from users where id = ?", String.class, resp.getUserId());
+        UserDto activated = userService.activate(token);
         assertNotNull(activated);
         assertEquals("可激活用户", activated.getNickname());
 

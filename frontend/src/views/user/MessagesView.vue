@@ -2,7 +2,7 @@
 import { onClickOutside } from '@vueuse/core'
 import { ChevronDown, ChevronUp, File, Forward as ForwardIcon, Image, MapPin, MessageCircle, MoreHorizontal, RotateCcw, Search, Send, ShieldBan, ShieldCheck, Smile, UserCheck, UserPlus, UserRoundCheck, UserRoundMinus, UserRoundPlus, UserX, X } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { apiDelete, apiGet, apiPost, apiPut, apiUpload } from '@/lib/api'
 import { useAppStore } from '@/stores/app'
 import type { Conversation, Friend, FriendRequest, Message, User } from '@/types'
@@ -27,6 +27,7 @@ const emojis = [
 ]
 
 const router = useRouter()
+const route = useRoute()
 const app = useAppStore()
 const conversations = ref<Conversation[]>([])
 const loading = ref(true)
@@ -586,8 +587,22 @@ function goToUser(item: Conversation) {
   }
 }
 
-onMounted(() => {
-  void loadConversations()
+onMounted(async () => {
+  await loadConversations()
+  const targetUserId = route.query.userId as string | undefined
+  if (targetUserId) {
+    let conv = conversations.value.find(c => c.type === '好友' && c.friendUserId === targetUserId)
+    if (!conv) {
+      try {
+        const result = await apiPost<{ conversationId: string }>('/conversations/by-user', { userId: targetUserId })
+        await loadConversations()
+        conv = conversations.value.find(c => c.id === result.conversationId)
+      } catch (e) {
+        error.value = e instanceof Error ? e.message : '无法创建会话'
+      }
+    }
+    if (conv) selectConversation(conv.id)
+  }
   refreshTimer = window.setInterval(refreshConversationsSilently, 5000)
 })
 
