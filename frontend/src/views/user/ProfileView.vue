@@ -319,7 +319,7 @@ async function uploadAvatar(event: Event) {
 
 function changeCover() {
   error.value = ''
-  window.alert('封面图上传暂未开放，请先在头像 URL 中更新个人展示图片。')
+  window.alert('封面图上传暂未开放，请通过头像上传更新个人展示图片。')
 }
 
 function openCancelAccount() {
@@ -396,7 +396,6 @@ async function cancelAccount() {
           <button class="btn btn-outline" :disabled="uploadingAvatar" @click="avatarInput?.click()">
             <Camera :size="16" />{{ uploadingAvatar ? '上传中' : '上传图片' }}
           </button>
-          <input v-model.trim="profile.avatar" class="input" placeholder="或粘贴图片 URL" />
         </div>
       </div>
       <div class="form-grid">
@@ -424,7 +423,6 @@ async function cancelAccount() {
           <input v-model="customInterestInput" class="input" placeholder="输入自定义兴趣，回车添加" @keyup.enter="addCustomInterest" @keyup.esc="showCustomInterest=false" />
           <button type="button" class="btn btn-primary" @click="addCustomInterest">添加</button>
         </div>
-        <input v-model.trim="profile.interests" class="input" placeholder="可选择上方标签，也可用顿号手动输入" />
       </label>
       <label>个性签名<textarea v-model.trim="profile.bio" class="textarea"></textarea></label>
       <p v-if="error" class="form-error">{{ error }}</p>
@@ -593,10 +591,10 @@ async function cancelAccount() {
 .profile-main>img{position:absolute;left:25px;top:-35px;width:112px;height:112px;border:5px solid #fff;border-radius:30px;object-fit:cover}
 .profile-copy{flex:1;min-width:0}
 .profile-copy>div:first-child{display:flex;align-items:center;gap:12px}
-.profile-copy h1{display:flex;align-items:center;gap:6px;margin:0;font-size:25px}
+.profile-copy h1{display:flex;align-items:center;gap:6px;margin:0;font-size:25px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .profile-copy h1 svg{color:var(--color-mint)}
-.location{display:flex;align-items:center;color:var(--color-ink-soft);font-size:10px}
-.profile-copy p{margin:9px 0;color:var(--color-ink-soft);font-size:12px}
+.location{display:flex;align-items:center;color:var(--color-ink-soft);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-copy p{margin:9px 0;color:var(--color-ink-soft);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .profile-stats{display:flex;gap:24px}
 .profile-stats div{display:flex;align-items:center;flex-direction:column}
 .profile-stats b{font-size:18px}
@@ -622,7 +620,7 @@ async function cancelAccount() {
 .edit-panel{margin:20px 26px 0;padding:22px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}
 .avatar-editor{display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:12px;border:1px solid var(--color-line);border-radius:var(--radius-md);background:var(--color-bg)}
 .avatar-editor>img{width:76px;height:76px;border-radius:22px;object-fit:cover;background:#fff}
-.avatar-editor>div{min-width:0;flex:1;display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:10px}
+.avatar-editor>div{min-width:0;flex:1;display:flex;align-items:center;gap:10px}
 .avatar-editor b{font-size:13px}
 .avatar-editor .btn{height:36px;font-size:11px}
 .edit-panel .form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
@@ -723,7 +721,6 @@ async function cancelAccount() {
   .profile-stats{margin-left:0}
   .profile-main>.btn{margin-left:auto}
   .avatar-editor{align-items:flex-start}
-  .avatar-editor>div{grid-template-columns:1fr}
   .edit-panel .form-grid,.profile-grid .activity-grid{grid-template-columns:1fr}
   .profile-grid aside{grid-template-columns:1fr}
   .merchant-head{flex-direction:column}
