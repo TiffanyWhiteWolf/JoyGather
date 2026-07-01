@@ -141,6 +141,14 @@ public class ActivityService {
         return jdbc.query("select * from activities where organizer_id = ? and status <> '草稿' order by updated_at desc", activityMapper(), userId);
     }
 
+    public List<ActivityDto> findJoinedActivities(String userId) {
+        return jdbc.query(
+            "select a.* from activities a inner join registrations r on r.activity_id = a.id " +
+            "where r.user_id = ? and r.status in ('已报名','候补中','已签到') and a.status <> '草稿' " +
+            "order by r.created_at desc",
+            activityMapper(), userId);
+    }
+
     public Map<String, String> myRegistrationStatus(String userId) {
         Map<String, String> result = new java.util.LinkedHashMap<String, String>();
         List<Map<String, Object>> rows = jdbc.queryForList("select activity_id,status from registrations where user_id = ? and status in ('已报名','候补中','已签到')", userId);
