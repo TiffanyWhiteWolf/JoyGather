@@ -78,6 +78,7 @@ public class SocialService {
         jdbc.update("delete from friendships where (user_id = ? and friend_id = ?) or (user_id = ? and friend_id = ?)", followerId, followeeId, followeeId, followerId);
         jdbc.update("update users set following_count = (select count(*) from follows where follower_id = ?) where id = ?", followerId, followerId);
         jdbc.update("update users set follower_count = (select count(*) from follows where followee_id = ?) where id = ?", followeeId, followeeId);
+        insertNonFriendBoundary(followerId, followeeId);
     }
 
     @Transactional
@@ -91,6 +92,7 @@ public class SocialService {
     public void removeFriend(String userId, String friendId) {
         if (!isFriend(userId, friendId)) throw new IllegalStateException("好友关系不存在");
         jdbc.update("delete from friendships where (user_id = ? and friend_id = ?) or (user_id = ? and friend_id = ?)", userId, friendId, friendId, userId);
+        insertNonFriendBoundary(userId, friendId);
     }
 
     @Transactional
@@ -108,6 +110,7 @@ public class SocialService {
         jdbc.update("update users set follower_count = (select count(*) from follows where followee_id = ?) where id = ?", userId, userId);
         jdbc.update("update users set following_count = (select count(*) from follows where follower_id = ?) where id = ?", blockedUserId, blockedUserId);
         jdbc.update("update users set follower_count = (select count(*) from follows where followee_id = ?) where id = ?", blockedUserId, blockedUserId);
+        insertNonFriendBoundary(userId, blockedUserId);
     }
 
     @Transactional
@@ -123,8 +126,39 @@ public class SocialService {
         return jdbc.queryForList("select * from notifications where user_id = ? order by created_at desc", userId);
     }
 
+    @Transactional
+    public void sendNotification(String senderId, SocialDtos.NotificationCreateRequest request) {
+        if (request == null) throw new IllegalStateException("通知内容不能为空");
+        String userId = request.getUserId();
+        if (userId == null || userId.trim().isEmpty()) throw new IllegalStateException("通知接收人不能为空");
+        if (request.getTitle() == null || request.getTitle().trim().isEmpty()) throw new IllegalStateException("通知标题不能为空");
+        if (request.getType() == null || request.getType().trim().isEmpty()) throw new IllegalStateException("通知类型不能为空");
+        createNotification(userId.trim(),
+                request.getType().trim(),
+                request.getTitle().trim(),
+                request.getContent(),
+                request.getTargetType(),
+                request.getTargetId());
+    }
+
     public void markNotificationRead(String id, String userId) {
         jdbc.update("update notifications set read_flag = 1 where id = ? and user_id = ?", id, userId);
+    }
+
+    @Transactional
+    public void createNotification(String userId, String type, String title, String content, String targetType, String targetId) {
+        if (userId == null || userId.trim().isEmpty()) throw new IllegalStateException("通知接收人不能为空");
+        if (title == null || title.trim().isEmpty()) throw new IllegalStateException("通知标题不能为空");
+        if (type == null || type.trim().isEmpty()) throw new IllegalStateException("通知类型不能为空");
+        userService.findById(userId.trim());
+        jdbc.update("insert into notifications (id,user_id,type,title,content,target_type,target_id) values (?,?,?,?,?,?,?)",
+                DbSupport.id("nf"),
+                userId.trim(),
+                type.trim(),
+                title.trim(),
+                content,
+                targetType,
+                targetId == null || targetId.trim().isEmpty() ? null : targetId.trim());
     }
 
     private void createFriendship(String a, String b) {
@@ -150,5 +184,23 @@ public class SocialService {
     private boolean blocked(String a, String b) {
         Integer count = jdbc.queryForObject("select count(*) from user_blocks where (user_id = ? and blocked_user_id = ?) or (user_id = ? and blocked_user_id = ?)", Integer.class, a, b, b, a);
         return count != null && count > 0;
+    }
+
+    private void insertNonFriendBoundary(String userA, String userB) {
+        try {
+            List<String> convIds = jdbc.queryForList(
+                "select c.id from conversations c where c.type = '好友' " +
+                "and exists (select 1 from conversation_participants where conversation_id = c.id and user_id = ?) " +
+                "and exists (select 1 from conversation_participants where conversation_id = c.id and user_id = ?)",
+                String.class, userA, userB);
+            if (!convIds.isEmpty()) {
+                jdbc.update(
+                    "insert into messages (id, conversation_id, sender_id, content, message_type, mine, read_flag) " +
+                    "values (?, ?, ?, '', 'SYSTEM', false, true)",
+                    DbSupport.id("ms"), convIds.get(0), userA);
+            }
+        } catch (Exception e) {
+            // 分界消息插入失败不影响取消关注/拉黑主流程
+        }
     }
 }

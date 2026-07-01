@@ -118,6 +118,13 @@ public class SocialController {
         return ApiResponse.success(socialService.notifications(userService.requireToken(authorization).getId()));
     }
 
+    @PostMapping("/notifications")
+    public ApiResponse<Void> sendNotification(@RequestBody SocialDtos.NotificationCreateRequest request,
+                                              @RequestHeader(value = "Authorization", required = false) String authorization) {
+        socialService.sendNotification(userService.requireToken(authorization).getId(), request);
+        return ApiResponse.success(null);
+    }
+
     @PutMapping("/notifications/{id}/read")
     public ApiResponse<Void> markNotificationRead(@PathVariable String id,
                                                   @RequestHeader(value = "Authorization", required = false) String authorization) {

@@ -30,7 +30,9 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .city-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-mint); box-shadow: 0 0 0 3px var(--color-mint-soft); }
 .main-nav { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .main-nav a { display: inline-flex; align-items: center; gap: 6px; padding: 10px 13px; color: var(--color-ink-soft); font-size: 14px; font-weight: 600; border-radius: var(--radius-pill); }
-.main-nav a.router-link-active { color: var(--color-ink); background: var(--color-bg); }
+.main-nav a.router-link-exact-active { color: var(--color-ink); background: var(--color-bg); }
+.main-nav .ai-nav-link { margin-left: auto; background: linear-gradient(135deg, #7c5ce7, #a78bfa); color: #fff !important; }
+.main-nav .ai-nav-link.router-link-exact-active { background: linear-gradient(135deg, #6a4bd4, #8b7bcf); color: #fff !important; }
 .main-nav .ai-mobile { display: none; }
 .top-actions { display: flex; align-items: center; gap: 10px; }
 .ai-link { display: flex; gap: 6px; color: #7656ce; font-size: 14px; font-weight: 700; }
