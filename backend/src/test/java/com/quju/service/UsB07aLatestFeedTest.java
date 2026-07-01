@@ -71,6 +71,27 @@ class UsB07aLatestFeedTest extends TestBase {
     }
 
     @Test
+    @DisplayName("已结束活动不进入公共信息流，但保留在我的活动中")
+    void shouldHideEndedActivitiesFromPublicFeedButKeepThemInMine() {
+        ActivityDto created = activityService.create(validActivityRequest(20));
+        jdbc.update(
+                "update activities set status = '报名中', end_at = timestamp '2020-01-01 12:00:00' where id = ?",
+                created.getId()
+        );
+
+        assertFalse(activityService.findAll(null, null).stream()
+                .anyMatch(item -> created.getId().equals(item.getId())));
+        assertFalse(activityService.recommendations(java.util.Collections.<String>emptyList(), 10).stream()
+                .anyMatch(item -> created.getId().equals(item.getId())));
+
+        ActivityDto mine = activityService.findMyActivities(USER_ID).stream()
+                .filter(item -> created.getId().equals(item.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("已结束", mine.getStatus());
+    }
+
+    @Test
     @DisplayName("US-B07a-4: 点击活动卡片可进入活动详情页")
     void shouldNavigateToDetailFromCard() {
         ActivityDto created = activityService.create(validActivityRequest(30));

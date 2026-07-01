@@ -66,7 +66,10 @@ public class ActivityService {
     public List<ActivityDto> findAll(String keyword, String category, BigDecimal minLng, BigDecimal maxLng,
                                      BigDecimal minLat, BigDecimal maxLat, String sort) {
         List<ActivityDto> activities = jdbc.query(
-                "select * from activities where published_at is not null and status not in ('草稿','审核中','已下架') and visibility = 'PUBLIC' order by featured desc, published_at desc, created_at desc",
+                "select * from activities where published_at is not null "
+                        + "and status not in ('草稿','审核中','已下架','已结束') "
+                        + "and (end_at is null or end_at >= now()) "
+                        + "and visibility = 'PUBLIC' order by featured desc, published_at desc, created_at desc",
                 activityMapper());
         return filter(activities, keyword, category, null, minLng, maxLng, minLat, maxLat, sort);
     }
@@ -74,7 +77,10 @@ public class ActivityService {
     public List<ActivityDto> recommendations(List<String> interests, Integer limit) {
         List<ActivityDto> activities = jdbc.query(
                 "select * from activities "
-                        + "where published_at is not null and status not in ('草稿','审核中','已下架') and visibility = 'PUBLIC' "
+                        + "where published_at is not null "
+                        + "and status not in ('草稿','审核中','已下架','已结束') "
+                        + "and (end_at is null or end_at >= now()) "
+                        + "and visibility = 'PUBLIC' "
                         + "order by (1.0 * joined_count / case when capacity > 0 then capacity else 1 end) desc, "
                         + "joined_count desc, featured desc, published_at desc, created_at desc",
                 activityMapper());
