@@ -32,3 +32,17 @@ frontend/vite.config.d.ts
 .vscode/
 
 .bitfun/
+
+# Codex/local agent artifacts
+.codex-output/
+docs/superpowers/
+
+# WeChat Mini Program local/private artifacts
+miniprogram/project.private.config.json
+miniprogram/miniprogram_npm/
+miniprogram/node_modules/
+miniprogram/.tmp/
+miniprogram/.temp/
+miniprogram/dist/
+miniprogram/preview/
+miniprogram/upload/

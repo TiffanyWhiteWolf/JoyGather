@@ -1,0 +1,38 @@
+<view class="page">
+  <view class="hero">
+    <view>
+      <view class="hero-title">发现附近的线下活动</view>
+      <view class="hero-subtitle">网页与小程序共用同一套账号和活动数据</view>
+    </view>
+    <button class="mini-button" bindtap="refresh">刷新</button>
+  </view>
+
+  <view wx:if="{{error}}" class="empty card">
+    <view>{{error}}</view>
+    <button class="secondary-button" bindtap="refresh">重试</button>
+  </view>
+
+  <view wx:elif="{{loading}}" class="empty card">活动加载中...</view>
+
+  <view wx:elif="{{activities.length === 0}}" class="empty card">暂无活动</view>
+
+  <view wx:else class="list">
+    <view wx:for="{{activities}}" wx:key="id" class="card activity-card" data-id="{{item.id}}" bindtap="openDetail">
+      <image wx:if="{{item.cover}}" class="cover" src="{{item.cover}}" mode="aspectFill" />
+      <view class="content">
+        <view class="row">
+          <text class="category">{{item.category}}</text>
+          <text class="status">{{item.status}}</text>
+        </view>
+        <view class="activity-title">{{item.title}}</view>
+        <view class="summary">{{item.summary}}</view>
+        <view class="meta">{{item.date}} {{item.time}}</view>
+        <view class="meta">{{item.district}} · {{item.location}}</view>
+        <view class="footer">
+          <text>{{item.joined}}/{{item.capacity}} 人</text>
+          <text class="price">{{item.priceText}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

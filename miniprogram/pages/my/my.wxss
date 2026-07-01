@@ -1,0 +1,95 @@
+.my-page {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.guest-card,
+.profile-card,
+.list-card {
+  padding: 28rpx;
+}
+
+.guest-title {
+  margin-bottom: 10rpx;
+  font-size: 34rpx;
+  font-weight: 700;
+}
+
+.guest-card button {
+  margin-top: 28rpx;
+}
+
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+}
+
+.avatar {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 56rpx;
+  background: #e9e5de;
+  flex: none;
+}
+
+.profile-main {
+  min-width: 0;
+}
+
+.nickname {
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 14rpx;
+}
+
+.chips text {
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  background: #f7f5f1;
+  color: #4e5768;
+  font-size: 22rpx;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18rpx;
+}
+
+.section-title {
+  margin-bottom: 14rpx;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18rpx;
+  padding: 18rpx 0;
+  border-top: 1rpx solid rgba(23, 34, 56, 0.08);
+  font-size: 26rpx;
+}
+
+.activity-id {
+  color: #4e5768;
+}
+
+.status {
+  color: #ff6b45;
+  font-weight: 700;
+}
+
+.empty-line {
+  padding-top: 12rpx;
+  color: #687083;
+  font-size: 26rpx;
+}

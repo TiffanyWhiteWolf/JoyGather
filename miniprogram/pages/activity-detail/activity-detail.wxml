@@ -1,0 +1,60 @@
+<view class="page detail-page">
+  <view wx:if="{{loading}}" class="card empty">活动加载中...</view>
+  <view wx:elif="{{error}}" class="card empty">
+    <view>{{error}}</view>
+    <button class="secondary-button" bindtap="reload">重试</button>
+  </view>
+  <block wx:else>
+    <image wx:if="{{activity.cover}}" class="cover" src="{{activity.cover}}" mode="aspectFill" />
+    <view class="card detail-card">
+      <view class="row">
+        <text class="category">{{activity.category}}</text>
+        <text class="status">{{activity.status}}</text>
+      </view>
+      <view class="title">{{activity.title}}</view>
+      <view class="summary">{{activity.summary}}</view>
+
+      <view class="facts">
+        <view class="fact">
+          <text class="label">时间</text>
+          <text>{{activity.date}} {{activity.time}}</text>
+        </view>
+        <view class="fact">
+          <text class="label">地点</text>
+          <text>{{activity.district}} · {{activity.location}}</text>
+        </view>
+        <view class="fact">
+          <text class="label">人数</text>
+          <text>{{activity.joined}}/{{activity.capacity}}</text>
+        </view>
+        <view class="fact">
+          <text class="label">费用</text>
+          <text>{{priceText}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="card detail-card">
+      <view class="section-title">活动介绍</view>
+      <view class="description">{{activity.description || activity.summary}}</view>
+    </view>
+
+    <view class="card detail-card">
+      <view class="section-title">组织者</view>
+      <view class="organizer">
+        <image wx:if="{{activity.organizer.avatar}}" class="avatar" src="{{activity.organizer.avatar}}" mode="aspectFill" />
+        <view>
+          <view>{{activity.organizer.nickname || '趣聚用户'}}</view>
+          <view class="muted">{{activity.organizer.city || '杭州'}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="action-bar">
+      <view class="current-status">当前状态：{{registrationStatus || '未报名'}}</view>
+      <button wx:if="{{!hasToken}}" class="primary-button" bindtap="goLogin">登录后报名</button>
+      <button wx:elif="{{canCancel}}" class="danger-button" loading="{{submitting}}" bindtap="cancelRegistration">取消报名</button>
+      <button wx:else class="primary-button" loading="{{submitting}}" bindtap="joinActivity">立即报名</button>
+    </view>
+  </block>
+</view>
