@@ -8,6 +8,7 @@ import com.quju.dto.PlannerResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -36,6 +37,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
+@RefreshScope
 public class IntegrationService {
     private final JdbcTemplate jdbc;
     private final ObjectProvider<JavaMailSender> mailSender;

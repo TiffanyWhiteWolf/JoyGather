@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: quju-backend
+  cloud:
+    nacos:
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        file-extension: yaml
+        enabled: ${NACOS_CONFIG_ENABLED:true}
+        refresh-enabled: true
+        fail-fast: ${NACOS_CONFIG_FAIL_FAST:false}
+        timeout: ${NACOS_CONFIG_TIMEOUT:3000}
+        max-retry: ${NACOS_CONFIG_MAX_RETRY:1}

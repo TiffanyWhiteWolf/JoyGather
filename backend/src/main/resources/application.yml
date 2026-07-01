@@ -59,3 +59,11 @@ quju:
 logging:
   level:
     com.quju: info
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
