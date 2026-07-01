@@ -71,6 +71,7 @@ async function loadTeams() {
 }
 
 async function joinTeam(id: string) {
+  if (!app.isLoggedIn) { router.push('/auth?redirect=' + encodeURIComponent(window.location.pathname + window.location.search)); return }
   const before = teams.value.find(team => team.id === id)
   const updated = await apiPost<Team>(`/teams/${id}/members`, {})
   teams.value = teams.value.map(team => team.id === id ? updated : team)

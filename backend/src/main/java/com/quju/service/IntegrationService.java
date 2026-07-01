@@ -14,6 +14,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
@@ -28,6 +29,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+
+import javax.mail.internet.MimeMessage;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -97,10 +100,17 @@ public class IntegrationService {
     public void sendActivationEmail(String email, String token) {
         String subject = "激活你的趣聚账号";
         String link = publicBaseUrl + "/auth?activate=" + token;
-        String body = "请打开以下链接激活账号：\n" + link + "\n如果不是你本人操作，请忽略。";
+        String htmlBody = "<html><body style=\"font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px;\">"
+                + "<h2 style=\"color:#ff6b45;\">趣聚</h2>"
+                + "<p>感谢注册趣聚！请点击下方按钮激活你的账号：</p>"
+                + "<p><a href=\"" + link + "\" style=\"display:inline-block;padding:12px 28px;background:#ff6b45;color:#fff;text-decoration:none;border-radius:24px;font-weight:bold;\">激活账号</a></p>"
+                + "<p style=\"color:#9ca3af;font-size:13px;\">或复制以下链接到浏览器：<br><a href=\"" + link + "\">" + link + "</a></p>"
+                + "<p style=\"color:#9ca3af;font-size:13px;\">如果不是你本人操作，请忽略此邮件。</p>"
+                + "</body></html>";
+        String textBody = "请打开以下链接激活账号：" + link + "\n如果不是你本人操作，请忽略。";
         String outboxId = DbSupport.id("mail");
         jdbc.update("insert into mail_outbox (id,recipient,subject,body,status) values (?,?,?,?,?)",
-                outboxId, email, subject, body, "待发送");
+                outboxId, email, subject, textBody, "待发送");
         if (smtpHost == null || smtpHost.trim().isEmpty()) {
             jdbc.update("update mail_outbox set status = '待配置', error = ? where id = ?", "SMTP 未配置，激活 token 已返回给本地开发环境", outboxId);
             logThirdParty("SMTP", "SEND_ACTIVATION", "DEGRADED", email, "", "SMTP 未配置", 0);
@@ -108,12 +118,13 @@ public class IntegrationService {
         }
         long started = System.currentTimeMillis();
         try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(mailFrom);
-            message.setTo(email);
-            message.setSubject(subject);
-            message.setText(body);
-            mailSender.getObject().send(message);
+            MimeMessage mimeMessage = mailSender.getObject().createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+            helper.setFrom(mailFrom);
+            helper.setTo(email);
+            helper.setSubject(subject);
+            helper.setText(textBody, htmlBody);
+            mailSender.getObject().send(mimeMessage);
             jdbc.update("update mail_outbox set status = '已发送', sent_at = now() where id = ?", outboxId);
             logThirdParty("SMTP", "SEND_ACTIVATION", "SUCCESS", email, "", "", elapsed(started));
         } catch (Exception ex) {

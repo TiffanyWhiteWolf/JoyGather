@@ -50,15 +50,12 @@ public class AuthDtos {
 
     public static class ActivationResponse {
         private String userId;
-        private String activationToken;
         private String status;
-        public ActivationResponse(String userId, String activationToken, String status) {
+        public ActivationResponse(String userId, String status) {
             this.userId = userId;
-            this.activationToken = activationToken;
             this.status = status;
         }
         public String getUserId() { return userId; }
-        public String getActivationToken() { return activationToken; }
         public String getStatus() { return status; }
     }
 
