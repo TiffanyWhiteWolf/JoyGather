@@ -22,11 +22,16 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.Arrays;
 
@@ -34,6 +39,8 @@ import java.util.Arrays;
 public class ActivityService {
     private static final int REVIEW_WINDOW_DAYS = 14;
     private static final List<String> SUMMARY_CATEGORIES = Arrays.asList("合影", "场地", "过程记录", "物资", "成果展示");
+    private static final Map<String, String> INTEREST_ALIASES = createInterestAliases();
+    private static final Map<String, Set<String>> CATEGORY_INTERESTS = createCategoryInterests();
     private final JdbcTemplate jdbc;
     private final UserService userService;
     private final IntegrationService integrationService;
@@ -60,6 +67,29 @@ public class ActivityService {
                 "select * from activities where published_at is not null and status not in ('草稿','审核中','已下架') and visibility = 'PUBLIC' order by featured desc, published_at desc, created_at desc",
                 activityMapper());
         return filter(activities, keyword, category, null, minLng, maxLng, minLat, maxLat, sort);
+    }
+
+    public List<ActivityDto> recommendations(List<String> interests, Integer limit) {
+        List<ActivityDto> activities = jdbc.query(
+                "select * from activities "
+                        + "where published_at is not null and status not in ('草稿','审核中','已下架') and visibility = 'PUBLIC' "
+                        + "order by (1.0 * joined_count / case when capacity > 0 then capacity else 1 end) desc, "
+                        + "joined_count desc, featured desc, published_at desc, created_at desc",
+                activityMapper());
+        Set<String> normalizedInterests = normalizedInterests(interests);
+        if (!normalizedInterests.isEmpty()) {
+            Collections.sort(activities, new Comparator<ActivityDto>() {
+                @Override
+                public int compare(ActivityDto left, ActivityDto right) {
+                    int scoreOrder = Double.compare(recommendationScore(right, normalizedInterests),
+                            recommendationScore(left, normalizedInterests));
+                    if (scoreOrder != 0) return scoreOrder;
+                    return safeDateTime(right.getPublishedAt()).compareTo(safeDateTime(left.getPublishedAt()));
+                }
+            });
+        }
+        int actualLimit = limit == null ? 10 : Math.max(1, Math.min(limit, 50));
+        return new ArrayList<ActivityDto>(activities.subList(0, Math.min(actualLimit, activities.size())));
     }
 
     public List<ActivityDto> findAll(String keyword, String category, String categories, String city, String fee,
@@ -638,6 +668,7 @@ public class ActivityService {
                 activity.setMinAge(rs.getInt("min_age"));
                 activity.setJoinFields(DbSupport.split(rs.getString("join_fields")));
                 activity.setOfflineReason(rs.getString("offline_reason"));
+                activity.setPublishedAt(formatDateTime(rs.getTimestamp("published_at")));
                 activity.setUpdatedAt(formatDateTime(rs.getTimestamp("updated_at")));
                 activity.setTags(tagsFor(activity.getId()));
                 activity.setOrganizer(userService.findById(rs.getString("organizer_id")));
@@ -658,6 +689,106 @@ public class ActivityService {
             if (tag == null || tag.trim().isEmpty()) continue;
             jdbc.update("insert into activity_tags (activity_id,tag,rank_order) values (?,?,?)", activityId, tag.trim(), order++);
         }
+    }
+
+    private double recommendationScore(ActivityDto activity, Set<String> interests) {
+        Set<String> activityTags = new HashSet<String>();
+        for (String tag : activity.getTags()) activityTags.add(canonicalInterest(tag));
+
+        int tagAndTextScore = 0;
+        String text = normalizeText(activity.getTitle() + " " + activity.getSummary() + " " + activity.getDescription());
+        for (String interest : interests) {
+            if (activityTags.contains(interest)) {
+                tagAndTextScore += 30;
+            } else if (text.contains(interest)) {
+                tagAndTextScore += 10;
+            }
+        }
+        tagAndTextScore = Math.min(60, tagAndTextScore);
+
+        Set<String> categoryMatches = CATEGORY_INTERESTS.get(canonicalInterest(activity.getCategory()));
+        int categoryScore = categoryMatches != null && !Collections.disjoint(categoryMatches, interests) ? 20 : 0;
+        double signupRate = activity.getCapacity() <= 0 ? 0
+                : Math.min(1D, (double) activity.getJoined() / activity.getCapacity());
+        double popularityScore = signupRate * 7D + Math.min(5D, activity.getJoined() / 4D);
+        int featuredScore = Boolean.TRUE.equals(activity.getFeatured()) ? 5 : 0;
+        int freshnessScore = freshnessScore(activity.getPublishedAt());
+        return tagAndTextScore + categoryScore + popularityScore + featuredScore + freshnessScore;
+    }
+
+    private int freshnessScore(String publishedAt) {
+        LocalDateTime published = safeDateTime(publishedAt);
+        if (published.equals(LocalDateTime.MIN)) return 0;
+        long days = java.time.Duration.between(published, LocalDateTime.now()).toDays();
+        if (days <= 7) return 3;
+        if (days <= 30) return 2;
+        if (days <= 90) return 1;
+        return 0;
+    }
+
+    private LocalDateTime safeDateTime(String value) {
+        if (value == null || value.trim().isEmpty()) return LocalDateTime.MIN;
+        try {
+            return LocalDateTime.parse(value);
+        } catch (DateTimeParseException ex) {
+            return LocalDateTime.MIN;
+        }
+    }
+
+    private Set<String> normalizedInterests(List<String> interests) {
+        Set<String> result = new LinkedHashSet<String>();
+        if (interests == null) return result;
+        for (String interest : interests) {
+            String normalized = canonicalInterest(interest);
+            if (!normalized.isEmpty()) result.add(normalized);
+        }
+        return result;
+    }
+
+    private static String canonicalInterest(String value) {
+        String normalized = normalizeText(value);
+        String alias = INTEREST_ALIASES.get(normalized);
+        return alias == null ? normalized : alias;
+    }
+
+    private static String normalizeText(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.CHINA)
+                .replaceAll("[\\s_\\-—·]+", "");
+    }
+
+    private static Map<String, String> createInterestAliases() {
+        Map<String, String> aliases = new HashMap<String, String>();
+        addAliases(aliases, "城市探索", "城市探索", "城市漫步", "citywalk", "city walk");
+        addAliases(aliases, "徒步", "徒步", "轻徒步", "爬山", "登山");
+        addAliases(aliases, "桌游", "桌游", "桌游聚会", "棋牌");
+        addAliases(aliases, "摄影", "摄影", "摄影友好", "拍照");
+        addAliases(aliases, "飞盘", "飞盘", "极限飞盘");
+        addAliases(aliases, "咖啡", "咖啡", "咖啡探店");
+        addAliases(aliases, "骑行", "骑行", "单车");
+        addAliases(aliases, "露营", "露营", "野营");
+        addAliases(aliases, "公益", "公益", "志愿者", "志愿服务");
+        addAliases(aliases, "运动健身", "运动健身", "健身");
+        addAliases(aliases, "学习交流", "学习交流", "读书", "阅读", "分享会");
+        return aliases;
+    }
+
+    private static void addAliases(Map<String, String> aliases, String canonical, String... values) {
+        for (String value : values) aliases.put(normalizeText(value), canonical);
+    }
+
+    private static Map<String, Set<String>> createCategoryInterests() {
+        Map<String, Set<String>> categories = new HashMap<String, Set<String>>();
+        categories.put("城市探索", setOf("城市探索", "摄影", "咖啡"));
+        categories.put("户外运动", setOf("徒步", "飞盘", "骑行", "露营"));
+        categories.put("桌游", setOf("桌游"));
+        categories.put("学习交流", setOf("学习交流", "摄影"));
+        categories.put("运动健身", setOf("运动健身", "飞盘", "骑行"));
+        categories.put("公益活动", setOf("公益"));
+        return categories;
+    }
+
+    private static Set<String> setOf(String... values) {
+        return new HashSet<String>(Arrays.asList(values));
     }
 
     private void validateForSubmit(ActivityCreateRequest request) {

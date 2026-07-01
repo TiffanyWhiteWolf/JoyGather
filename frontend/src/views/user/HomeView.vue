@@ -11,6 +11,7 @@ import type { Activity, Team } from '@/types'
 const router = useRouter()
 const query = ref('')
 const activities = ref<Activity[]>([])
+const recommendedActivities = ref<Activity[]>([])
 const teams = ref<Team[]>([])
 const heroCover = computed(() => activities.value[0]?.cover ?? 'https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=1400&q=85')
 const nextActivity = computed(() => activities.value[0])
@@ -19,17 +20,21 @@ const activeMembers = computed(() => teams.value.reduce((total, team) => total +
 const feedTab = ref<'最新' | '推荐' | '附近'>('最新')
 const feedActivities = computed(() => {
   if (feedTab.value === '附近') return [...activities.value].sort((a, b) => a.distance - b.distance)
-  if (feedTab.value === '推荐') return [...activities.value].sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)))
+  if (feedTab.value === '推荐') return recommendedActivities.value
   return activities.value
 })
 const submitSearch = () => router.push({ path: '/discover', query: { q: query.value } })
 
 onMounted(async () => {
-  const [activityRows, teamRows] = await Promise.all([
+  const [activityRows, recommendationRows, teamRows] = await Promise.all([
     apiGet<Activity[]>('/activities'),
+    apiGet<Activity[]>('/activities/recommendations?limit=10').catch(() => [] as Activity[]),
     apiGet<Team[]>('/teams'),
   ])
   activities.value = activityRows
+  recommendedActivities.value = recommendationRows.length > 0
+    ? recommendationRows
+    : [...activityRows].sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)))
   teams.value = teamRows
 })
 </script>

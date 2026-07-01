@@ -55,6 +55,15 @@ public class ActivityController {
         return ApiResponse.success(activityService.findAll(keyword, category, categories, city, fee, time, distance, lat, lng, minLng, maxLng, minLat, maxLat, sort, page, size));
     }
 
+    @GetMapping("/recommendations")
+    public ApiResponse<List<ActivityDto>> recommendations(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) Integer limit) {
+        com.quju.dto.UserDto user = userService.optionalToken(authorization);
+        return ApiResponse.success(activityService.recommendations(
+                user == null ? null : user.getInterests(), limit));
+    }
+
     @GetMapping("/my")
     public ApiResponse<List<ActivityDto>> myActivities(@RequestHeader(value = "Authorization", required = false) String authorization) {
         String userId = userService.requireToken(authorization).getId();

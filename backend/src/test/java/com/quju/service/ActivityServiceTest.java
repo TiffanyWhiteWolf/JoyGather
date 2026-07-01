@@ -9,11 +9,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class ActivityServiceTest {
     private ActivityService service;
+    private JdbcTemplate jdbc;
 
     @BeforeEach
     void setUp() {
@@ -21,7 +25,7 @@ class ActivityServiceTest {
         dataSource.setDriverClassName("org.h2.Driver");
         dataSource.setUrl("jdbc:h2:mem:activity_service_" + System.nanoTime() + ";MODE=MySQL;DB_CLOSE_DELAY=-1");
         dataSource.setUsername("sa");
-        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc = new JdbcTemplate(dataSource);
         createSchema(jdbc);
         seedUser(jdbc);
         service = new ActivityService(jdbc, new UserService(jdbc));
@@ -52,6 +56,42 @@ class ActivityServiceTest {
         assertEquals(2, service.findById(created.getId()).get().getJoined());
     }
 
+    @Test
+    void recommendsActivitiesMatchingCurrentInterests() {
+        seedActivity("act-disc", "周末飞盘局", "户外运动", 1, 20, false, "报名中", "PUBLIC", "飞盘");
+        seedActivity("act-board", "热门桌游夜", "桌游聚会", 19, 20, true, "报名中", "PUBLIC", "桌游");
+
+        List<ActivityDto> flyingDisc = service.recommendations(Arrays.asList("飞盘"), 10);
+        List<ActivityDto> boardGames = service.recommendations(Arrays.asList("桌游"), 10);
+
+        assertEquals("act-disc", flyingDisc.get(0).getId());
+        assertEquals("act-board", boardGames.get(0).getId());
+    }
+
+    @Test
+    void usesPopularActivitiesWhenInterestsAreEmpty() {
+        seedActivity("act-new", "新活动", "学习交流", 1, 20, false, "报名中", "PUBLIC", "阅读");
+        seedActivity("act-popular", "热门活动", "城市探索", 18, 20, true, "报名中", "PUBLIC", "摄影友好");
+
+        List<ActivityDto> result = service.recommendations(Collections.<String>emptyList(), 10);
+
+        assertEquals("act-popular", result.get(0).getId());
+    }
+
+    @Test
+    void excludesDraftOfflineAndNonPublicActivitiesFromRecommendations() {
+        seedActivity("act-public", "公开飞盘", "户外运动", 1, 20, false, "报名中", "PUBLIC", "飞盘");
+        seedActivity("act-draft", "草稿飞盘", "户外运动", 20, 20, true, "草稿", "PUBLIC", "飞盘");
+        seedActivity("act-offline", "下架飞盘", "户外运动", 20, 20, true, "已下架", "PUBLIC", "飞盘");
+        seedActivity("act-team", "小队飞盘", "户外运动", 20, 20, true, "报名中", "TEAM", "飞盘");
+
+        List<ActivityDto> result = service.recommendations(Arrays.asList("飞盘"), 10);
+
+        assertEquals(1, result.size());
+        assertEquals("act-public", result.get(0).getId());
+        assertFalse(result.stream().anyMatch(item -> "act-draft".equals(item.getId())));
+    }
+
     private ActivityCreateRequest request(int capacity) {
         ActivityCreateRequest request = new ActivityCreateRequest();
         request.setTitle("测试活动");
@@ -68,6 +108,17 @@ class ActivityServiceTest {
         request.setTags(Arrays.asList("测试"));
         request.setOrganizerId("u-001");
         return request;
+    }
+
+    private void seedActivity(String id, String title, String category, int joined, int capacity,
+                              boolean featured, String status, String visibility, String tag) {
+        jdbc.update("insert into activities "
+                        + "(id,title,summary,description,category,cover,date_label,time_label,location,district,distance,"
+                        + "longitude,latitude,price,capacity,joined_count,status,organizer_id,featured,join_fields,"
+                        + "published_at,visibility) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,current_timestamp,?)",
+                id, title, title + "简介", title + "详情", category, "", "2026-08-01", "19:00 - 21:00",
+                "杭州", "西湖区", 1, 120, 30, 0, capacity, joined, status, "u-001", featured, "", visibility);
+        jdbc.update("insert into activity_tags (activity_id,tag,rank_order) values (?,?,1)", id, tag);
     }
 
     private void createSchema(JdbcTemplate jdbc) {

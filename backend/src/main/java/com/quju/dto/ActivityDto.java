@@ -31,6 +31,7 @@ public class ActivityDto {
     private int minAge;
     private List<String> joinFields;
     private String offlineReason;
+    private String publishedAt;
     private String updatedAt;
 
     public ActivityDto() { }
@@ -98,6 +99,8 @@ public class ActivityDto {
     public void setJoinFields(List<String> joinFields) { this.joinFields = joinFields; }
     public String getOfflineReason() { return offlineReason; }
     public void setOfflineReason(String offlineReason) { this.offlineReason = offlineReason; }
+    public String getPublishedAt() { return publishedAt; }
+    public void setPublishedAt(String publishedAt) { this.publishedAt = publishedAt; }
     public String getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(String updatedAt) { this.updatedAt = updatedAt; }
 }
