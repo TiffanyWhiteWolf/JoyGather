@@ -38,7 +38,7 @@ public class AdminService {
         this.socialService = socialService;
     }
 
-    public DashboardDto dashboard() {
+    public DashboardDto dashboard(String adminName) {
         Map<String, Integer> metrics = new LinkedHashMap<String, Integer>();
         metrics.put("users", count("select count(*) from users"));
         metrics.put("monthlyActivities", count("select count(*) from activities where status <> '草稿'"));
@@ -47,7 +47,18 @@ public class AdminService {
         Map<String, Integer> distribution = new LinkedHashMap<String, Integer>();
         List<Map<String, Object>> rows = jdbc.queryForList("select category, count(*) amount from activities where status <> '草稿' group by category order by amount desc");
         for (Map<String, Object> row : rows) distribution.put(String.valueOf(row.get("category")), ((Number) row.get("amount")).intValue());
-        return new DashboardDto(metrics, distribution);
+
+        // 最近7天每日报名数
+        List<Integer> trend = new java.util.ArrayList<>();
+        for (int i = 6; i >= 0; i--) {
+            Integer cnt = jdbc.queryForObject(
+                "select count(*) from registrations where created_at >= curdate() - interval ? day and created_at < curdate() - interval ? day",
+                Integer.class, i, i - 1
+            );
+            trend.add(cnt == null ? 0 : cnt);
+        }
+
+        return new DashboardDto(metrics, distribution, trend, adminName);
     }
 
     public List<ReviewTaskDto> reviews(String query, String type) {

@@ -41,8 +41,8 @@ public class AdminController {
 
     @GetMapping("/dashboard")
     public ApiResponse<DashboardDto> dashboard(@RequestHeader(value = "Authorization", required = false) String authorization) {
-        userService.requireAdmin(authorization);
-        return ApiResponse.success(adminService.dashboard());
+        UserDto admin = userService.requireAdmin(authorization);
+        return ApiResponse.success(adminService.dashboard(admin.getNickname()));
     }
 
     @GetMapping("/reviews")
