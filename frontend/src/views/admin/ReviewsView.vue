@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { Check, ExternalLink, Filter, Search, ShieldAlert, X } from 'lucide-vue-next'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, inject, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { apiGet, apiPost } from '@/lib/api'
 import type { MerchantApplication, ReviewDetail, ReviewTask } from '@/types'
-const app=useAppStore(); const router=useRouter(); const tasks=ref<ReviewTask[]>([]); const tab=ref('全部待办'); const selected=ref<ReviewTask|null>(null); const query=ref(''); const rejecting=ref<string|null>(null); const reason=ref(''); const reasonError=ref(''); const ruleOpen=ref(false); const riskFilter=ref<'全部风险'|'低'|'中'|'高'>('全部风险')
+const app=useAppStore(); const router=useRouter(); const refreshPendingCount=inject<()=>void>('refreshPendingCount', ()=>{}); const tasks=ref<ReviewTask[]>([]); const tab=ref('全部待办'); const selected=ref<ReviewTask|null>(null); const query=ref(''); const rejecting=ref<string|null>(null); const reason=ref(''); const reasonError=ref(''); const ruleOpen=ref(false); const riskFilter=ref<'全部风险'|'低'|'中'|'高'>('全部风险')
 const merchantApplications = ref<MerchantApplication[]>([])
 const reviewStatus = ref<'待审核' | '已处理' | '全部状态'>('待审核')
 const selectedDetail = ref<ReviewDetail | null>(null)
@@ -19,7 +19,7 @@ const selectedTask=computed(()=>selected.value && visibleTasks.value.some(task=>
 const latestAudit=computed(()=>selectedDetail.value?.aiAudits?.[0])
 const selectedMerchant=computed(()=>selectedTask.value.type==='商家认证'?merchantApplications.value.find(item=>merchantField(item,'id')===selectedTask.value.targetId):undefined)
 function merchantField(item: MerchantApplication, camel: keyof MerchantApplication){const raw=item as unknown as Record<string, unknown>; const snake=String(camel).replace(/[A-Z]/g, letter=>`_${letter.toLowerCase()}`); return String(raw[camel] ?? raw[snake] ?? '')}
-async function loadReviews(){const [reviewData, merchantData]=await Promise.all([apiGet<ReviewTask[]>(`/admin/reviews?status=${encodeURIComponent(reviewStatus.value)}`), apiGet<MerchantApplication[]>('/admin/merchant-applications?status=待审核')]); tasks.value=reviewData; merchantApplications.value=merchantData; if(!selected.value || !tasks.value.some(task=>task.id===selected.value?.id)) selected.value=tasks.value[0] ?? null}
+async function loadReviews(){const [reviewData, merchantData]=await Promise.all([apiGet<ReviewTask[]>(`/admin/reviews?status=${encodeURIComponent(reviewStatus.value)}`), apiGet<MerchantApplication[]>('/admin/merchant-applications?status=待审核')]); tasks.value=reviewData; merchantApplications.value=merchantData; refreshPendingCount(); if(!selected.value || !tasks.value.some(task=>task.id===selected.value?.id)) selected.value=tasks.value[0] ?? null}
 async function approve(id:string){await apiPost<void>(`/admin/reviews/${id}/approve`, { handlerId:'admin' }); app.showToast('审核已通过，结果已记录'); await loadReviews()}
 function openReject(id:string){rejecting.value=id;reason.value='';reasonError.value=''}
 async function confirmReject(){if(!reason.value.trim()){reasonError.value='驳回时必须填写原因。';return};await apiPost<void>(`/admin/reviews/${rejecting.value}/reject`, { reason:reason.value, handlerId:'admin' });rejecting.value=null;selected.value=null;app.showToast('已驳回并记录原因');await loadReviews()}
