@@ -161,12 +161,10 @@ onBeforeUnmount(() => {
           <RouterLink v-for="item in nav" :key="item.to" :to="item.to" @click="menuOpen = false">
             <component :is="item.icon" :size="18" />{{ item.label }}
           </RouterLink>
-          <RouterLink to="/ai-planner" class="ai-mobile"><Sparkles :size="17" />AI 策划</RouterLink>
-          <RouterLink to="/drafts" class="ai-mobile"><FileText :size="17" />我的草稿</RouterLink>
+          <RouterLink v-if="currentUser" to="/drafts" @click="menuOpen = false"><FileText :size="18" />我的草稿</RouterLink>
+          <RouterLink to="/ai-planner" class="ai-nav-link" @click="menuOpen = false"><Sparkles :size="18" />AI 策划</RouterLink>
         </nav>
         <div class="top-actions">
-          <RouterLink to="/ai-planner" class="ai-link"><Sparkles :size="17" />AI 策划</RouterLink>
-          <RouterLink v-if="currentUser" to="/drafts" class="ai-link"><FileText :size="17" />我的草稿</RouterLink>
           <RouterLink to="/create" class="btn btn-primary btn-sm"><Plus :size="17" />发起活动</RouterLink>
           <div ref="noticeWrap" class="top-popover-wrap">
             <button class="icon-button notice" @click="toggleNotice"><Bell :size="19" /><span v-if="app.notifications">{{ app.notifications }}</span></button>
