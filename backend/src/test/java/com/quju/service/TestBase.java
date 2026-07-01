@@ -163,6 +163,11 @@ public abstract class TestBase {
                 + "target_type varchar(80), target_id varchar(64), reason varchar(1000),"
                 + "created_at timestamp default current_timestamp)");
 
+        jdbc.execute("create table notifications ("
+                + "id varchar(64) primary key, user_id varchar(64), type varchar(60), title varchar(180),"
+                + "content varchar(1000), target_type varchar(60), target_id varchar(64),"
+                + "read_flag boolean default false, created_at timestamp default current_timestamp)");
+
         jdbc.execute("create table teams ("
                 + "id varchar(64) primary key, name varchar(120), description varchar(1000),"
                 + "cover varchar(500), tags varchar(1000), members_count int, capacity int,"

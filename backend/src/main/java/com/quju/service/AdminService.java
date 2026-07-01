@@ -1,7 +1,9 @@
 package com.quju.service;
 
 import com.quju.dto.ActivityDto;
+import com.quju.dto.AiAuditDto;
 import com.quju.dto.DashboardDto;
+import com.quju.dto.ReviewDetailDto;
 import com.quju.dto.ReviewTaskDto;
 import com.quju.dto.UserDto;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,10 +42,32 @@ public class AdminService {
     }
 
     public List<ReviewTaskDto> reviews(String query, String type) {
+        return reviews(query, type, "待审核");
+    }
+
+    public List<ReviewTaskDto> reviews(String query, String type, String status) {
         String normalized = "%" + (query == null ? "" : query.trim().toLowerCase()) + "%";
         String filterType = type == null || type.startsWith("全部") ? "" : type;
-        return jdbc.query("select * from review_tasks where status = '待审核' and (? = '' or type = ?) and (lower(title) like ? or lower(submitter) like ?) order by submitted_at desc",
-                reviewMapper(), filterType, filterType, normalized, normalized);
+        String filterStatus = status == null || status.trim().isEmpty()
+                ? "待审核" : (status.startsWith("全部") ? "" : status);
+        return jdbc.query("select * from review_tasks "
+                        + "where (? = '' or type = ?) "
+                        + "and (? = '' or (? = '已处理' and status <> '待审核') or status = ?) "
+                        + "and (lower(title) like ? or lower(submitter) like ?) order by submitted_at desc",
+                reviewMapper(), filterType, filterType, filterStatus, filterStatus, filterStatus, normalized, normalized);
+    }
+
+    public ReviewDetailDto reviewDetail(String id) {
+        List<ReviewTaskDto> tasks = jdbc.query("select * from review_tasks where id = ?", reviewMapper(), id);
+        if (tasks.isEmpty()) throw new java.util.NoSuchElementException("审核任务不存在");
+        ReviewTaskDto task = tasks.get(0);
+        ActivityDto activity = "活动审核".equals(task.getType())
+                ? activityService.findById(task.getTargetId()).orElse(null) : null;
+        List<AiAuditDto> audits = "活动审核".equals(task.getType())
+                ? jdbc.query("select * from ai_audit_logs where activity_id = ? order by created_at desc",
+                        aiAuditMapper(), task.getTargetId())
+                : java.util.Collections.<AiAuditDto>emptyList();
+        return new ReviewDetailDto(task, activity, audits);
     }
 
     @Transactional
@@ -53,13 +77,23 @@ public class AdminService {
         }
         List<Map<String, Object>> rows = jdbc.queryForList("select * from review_tasks where id = ?", id);
         if (rows.isEmpty()) throw new java.util.NoSuchElementException("审核任务不存在");
+        if (!"待审核".equals(String.valueOf(rows.get(0).get("status")))) {
+            throw new IllegalStateException("该审核任务已处理");
+        }
         String type = String.valueOf(rows.get(0).get("type"));
         String targetId = String.valueOf(rows.get(0).get("target_id"));
         jdbc.update("update review_tasks set status = ?, handled_at = now(), handler_id = ?, handler_reason = ? where id = ?", result, handlerId, reason, id);
         if ("活动审核".equals(type)) {
-            if ("已通过".equals(result)) jdbc.update("update activities set status = '报名中', published_at = now() where id = ?", targetId);
-            if ("已驳回".equals(result)) jdbc.update("update activities set status = '已下架', offline_reason = ? where id = ?", reason, targetId);
-            if ("要求修改".equals(result)) jdbc.update("update activities set status = '审核中', offline_reason = ? where id = ?", reason, targetId);
+            if ("已通过".equals(result)) jdbc.update(
+                    "update activities set status = '报名中', published_at = now(), review_decision = '已通过', review_reason = ? where id = ?",
+                    DbSupport.safe(reason, "人工审核已通过，活动已发布"), targetId);
+            if ("已驳回".equals(result)) jdbc.update(
+                    "update activities set status = '已下架', offline_reason = ?, review_decision = '已驳回', review_reason = ? where id = ?",
+                    reason, reason, targetId);
+            if ("要求修改".equals(result)) jdbc.update(
+                    "update activities set status = '审核中', offline_reason = ?, review_decision = '要求修改', review_reason = ? where id = ?",
+                    reason, reason, targetId);
+            createActivityReviewNotification(targetId, result, reason);
         }
         if ("商家认证".equals(type)) {
             jdbc.update("update merchant_applications set status = ?, reason = ?, reviewed_at = now(), reviewer_id = ? where id = ?", result, reason, handlerId, targetId);
@@ -123,8 +157,44 @@ public class AdminService {
         };
     }
 
+    private RowMapper<AiAuditDto> aiAuditMapper() {
+        return new RowMapper<AiAuditDto>() {
+            public AiAuditDto mapRow(ResultSet rs, int rowNum) throws SQLException {
+                AiAuditDto audit = new AiAuditDto();
+                audit.setId(rs.getString("id"));
+                audit.setResult(rs.getString("result"));
+                audit.setRiskLevel(rs.getString("risk_level"));
+                audit.setRiskLabels(DbSupport.split(rs.getString("risk_labels")));
+                audit.setReason(rs.getString("reason"));
+                java.math.BigDecimal confidence = rs.getBigDecimal("confidence");
+                audit.setConfidence(confidence == null ? null : confidence.doubleValue());
+                audit.setProvider(rs.getString("provider"));
+                audit.setModel(rs.getString("model"));
+                audit.setProviderStatus(rs.getString("provider_status"));
+                audit.setErrorMessage(rs.getString("error_message"));
+                audit.setDurationMs(rs.getInt("duration_ms"));
+                audit.setCreatedAt(DbSupport.formatTime(rs.getTimestamp("created_at")));
+                return audit;
+            }
+        };
+    }
+
     private void log(String actorId, String action, String targetType, String targetId, String reason) {
         jdbc.update("insert into audit_logs (id,actor_id,action,target_type,target_id,reason) values (?,?,?,?,?,?)",
                 DbSupport.id("log"), actorId, action, targetType, targetId, reason);
+    }
+
+    private void createActivityReviewNotification(String activityId, String result, String reason) {
+        List<Map<String, Object>> activities = jdbc.queryForList(
+                "select organizer_id,title from activities where id = ?", activityId);
+        if (activities.isEmpty()) return;
+        Map<String, Object> activity = activities.get(0);
+        String title = "已通过".equals(result) ? "活动审核已通过"
+                : ("要求修改".equals(result) ? "活动需要修改" : "活动审核未通过");
+        String content = String.valueOf(activity.get("title")) + "：" + DbSupport.safe(reason,
+                "已通过".equals(result) ? "活动已发布，可以开始接受报名。" : "请查看活动详情了解审核结果。");
+        jdbc.update("insert into notifications (id,user_id,type,title,content,target_type,target_id) values (?,?,?,?,?,?,?)",
+                DbSupport.id("notice"), activity.get("organizer_id"), "ACTIVITY_REVIEW",
+                title, content, "ACTIVITY", activityId);
     }
 }

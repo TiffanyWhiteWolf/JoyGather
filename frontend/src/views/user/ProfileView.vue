@@ -443,7 +443,7 @@ async function cancelAccount() {
         <template v-if="activeTab==='我的活动'">
           <div v-if="activities.length" class="activity-grid managed-activities">
             <div v-for="activity in activities" :key="activity.id" class="managed-activity">
-              <ActivityCard :activity="activity" />
+              <ActivityCard :activity="activity" show-status />
               <div class="activity-tools">
                 <span>{{ activity.status }}</span>
                 <button @click="openCheckinManagement(activity)"><QrCode :size="15" />签到管理</button>

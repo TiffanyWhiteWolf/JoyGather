@@ -31,6 +31,10 @@ public class ActivityDto {
     private int minAge;
     private List<String> joinFields;
     private String offlineReason;
+    private String aiReviewStatus;
+    private List<String> aiRiskLabels;
+    private String reviewDecision;
+    private String reviewReason;
     private String publishedAt;
     private String updatedAt;
 
@@ -99,6 +103,14 @@ public class ActivityDto {
     public void setJoinFields(List<String> joinFields) { this.joinFields = joinFields; }
     public String getOfflineReason() { return offlineReason; }
     public void setOfflineReason(String offlineReason) { this.offlineReason = offlineReason; }
+    public String getAiReviewStatus() { return aiReviewStatus; }
+    public void setAiReviewStatus(String aiReviewStatus) { this.aiReviewStatus = aiReviewStatus; }
+    public List<String> getAiRiskLabels() { return aiRiskLabels; }
+    public void setAiRiskLabels(List<String> aiRiskLabels) { this.aiRiskLabels = aiRiskLabels; }
+    public String getReviewDecision() { return reviewDecision; }
+    public void setReviewDecision(String reviewDecision) { this.reviewDecision = reviewDecision; }
+    public String getReviewReason() { return reviewReason; }
+    public void setReviewReason(String reviewReason) { this.reviewReason = reviewReason; }
     public String getPublishedAt() { return publishedAt; }
     public void setPublishedAt(String publishedAt) { this.publishedAt = publishedAt; }
     public String getUpdatedAt() { return updatedAt; }

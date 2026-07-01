@@ -3,7 +3,7 @@ import { Bell, ChevronDown, Compass, FileText, LogOut, Map, Menu, MessageCircle,
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
-import { apiGet, apiPost, clearAuthStorage, logout as apiLogout } from '@/lib/api'
+import { apiGet, apiPost, apiPut, clearAuthStorage, logout as apiLogout } from '@/lib/api'
 import UserQrCode from '@/components/common/UserQrCode.vue'
 import QrScannerModal from '@/components/common/QrScannerModal.vue'
 import type { User } from '@/types'
@@ -18,7 +18,8 @@ const qrTab = ref<'my' | 'scan'>('my')
 const showQrScanner = ref(false)
 const currentUser = ref<User | null>(null)
 const cities = ['杭州', '上海', '南京', '苏州']
-const notices = ['活动报名和候补通知会在这里显示', '商家审核结果会通过站内通知同步', '小队新消息请前往消息页查看']
+interface Notice { id: string; title: string; content: string; targetId?: string; target_id?: string; readFlag?: boolean; read_flag?: boolean }
+const notices = ref<Notice[]>([])
 const nav = [
   { to: '/', label: '发现', icon: Compass },
   { to: '/discover', label: '地图', icon: Map },
@@ -29,11 +30,28 @@ const nav = [
 async function loadCurrentUser() {
   try {
     currentUser.value = await apiGet<User>('/auth/me')
+    notices.value = await apiGet<Notice[]>('/notifications')
+    app.notifications = notices.value.filter(item => !(item.readFlag ?? item.read_flag)).length
     await app.refreshUserState()
   } catch {
     clearAuthStorage()
     currentUser.value = null
+    notices.value = []
+    app.notifications = 0
     await app.refreshUserState()
+  }
+}
+
+async function openNotice(item: Notice) {
+  if (!(item.readFlag ?? item.read_flag)) {
+    await apiPut<void>(`/notifications/${item.id}/read`, {})
+    item.readFlag = true
+    app.notifications = Math.max(0, app.notifications - 1)
+  }
+  const targetId = item.targetId || item.target_id
+  if (targetId) {
+    noticeOpen.value = false
+    await router.push(`/activities/${targetId}`)
   }
 }
 
@@ -107,7 +125,8 @@ onBeforeUnmount(() => {
             <button class="icon-button notice" @click="noticeOpen = !noticeOpen"><Bell :size="19" /><span>{{ app.notifications }}</span></button>
             <div v-if="noticeOpen" class="top-popover notice-menu">
               <b>通知</b>
-              <p v-for="item in notices" :key="item">{{ item }}</p>
+              <button v-for="item in notices" :key="item.id" @click="openNotice(item)"><b>{{ item.title }}</b><small>{{ item.content }}</small></button>
+              <p v-if="!notices.length">暂无新通知</p>
             </div>
           </div>
           <div v-if="currentUser" class="top-popover-wrap">
@@ -150,6 +169,8 @@ onBeforeUnmount(() => {
 .notice-menu{width:250px}
 .notice-menu b{display:block;margin-bottom:6px;font-size:12px}
 .notice-menu p{margin:0;padding:8px 0;border-top:1px solid var(--color-line);color:var(--color-ink-soft);font-size:11px;line-height:1.5}
+.notice-menu button{width:100%;padding:9px 0;border:0;border-top:1px solid var(--color-line);background:transparent;text-align:left}
+.notice-menu button b{margin:0 0 3px;font-size:11px}.notice-menu button small{display:block;color:var(--color-ink-soft);font-size:10px;line-height:1.5}
 .logout-button{color:var(--color-danger)}
 .qr-popover{width:280px;padding:0;overflow:hidden}
 .qr-tabs{display:flex;border-bottom:1px solid var(--color-line)}

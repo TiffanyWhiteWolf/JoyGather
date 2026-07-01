@@ -53,6 +53,10 @@ export interface Activity {
   minAge?: number
   joinFields?: string[]
   offlineReason?: string
+  aiReviewStatus?: 'LOW_RISK' | 'REVIEW_REQUIRED' | 'INDETERMINATE' | 'ERROR'
+  aiRiskLabels?: string[]
+  reviewDecision?: ReviewStatus
+  reviewReason?: string
   publishedAt?: string
   updatedAt?: string
 }
@@ -163,6 +167,27 @@ export interface ReviewTask {
   submittedAt: string
   status: ReviewStatus
   targetId: string
+}
+
+export interface AiAudit {
+  id: string
+  result: 'LOW_RISK' | 'REVIEW_REQUIRED' | 'INDETERMINATE' | 'ERROR'
+  riskLevel: '低' | '中' | '高'
+  riskLabels: string[]
+  reason: string
+  confidence?: number
+  provider?: string
+  model?: string
+  providerStatus: string
+  errorMessage?: string
+  durationMs: number
+  createdAt: string
+}
+
+export interface ReviewDetail {
+  task: ReviewTask
+  activity?: Activity
+  aiAudits: AiAudit[]
 }
 
 export interface Message {
