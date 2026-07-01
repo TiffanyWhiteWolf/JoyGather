@@ -22,15 +22,25 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.Arrays;
 
 @Service
 public class ActivityService {
+    private static final int REVIEW_WINDOW_DAYS = 14;
+    private static final List<String> SUMMARY_CATEGORIES = Arrays.asList("合影", "场地", "过程记录", "物资", "成果展示");
+    private static final Map<String, String> INTEREST_ALIASES = createInterestAliases();
+    private static final Map<String, Set<String>> CATEGORY_INTERESTS = createCategoryInterests();
     private final JdbcTemplate jdbc;
     private final UserService userService;
     private final IntegrationService integrationService;
@@ -54,9 +64,32 @@ public class ActivityService {
     public List<ActivityDto> findAll(String keyword, String category, BigDecimal minLng, BigDecimal maxLng,
                                      BigDecimal minLat, BigDecimal maxLat, String sort) {
         List<ActivityDto> activities = jdbc.query(
-                "select * from activities where status <> '草稿' and status <> '已下架' and visibility = 'PUBLIC' order by featured desc, published_at desc, created_at desc",
+                "select * from activities where published_at is not null and status not in ('草稿','审核中','已下架') and visibility = 'PUBLIC' order by featured desc, published_at desc, created_at desc",
                 activityMapper());
         return filter(activities, keyword, category, null, minLng, maxLng, minLat, maxLat, sort);
+    }
+
+    public List<ActivityDto> recommendations(List<String> interests, Integer limit) {
+        List<ActivityDto> activities = jdbc.query(
+                "select * from activities "
+                        + "where published_at is not null and status not in ('草稿','审核中','已下架') and visibility = 'PUBLIC' "
+                        + "order by (1.0 * joined_count / case when capacity > 0 then capacity else 1 end) desc, "
+                        + "joined_count desc, featured desc, published_at desc, created_at desc",
+                activityMapper());
+        Set<String> normalizedInterests = normalizedInterests(interests);
+        if (!normalizedInterests.isEmpty()) {
+            Collections.sort(activities, new Comparator<ActivityDto>() {
+                @Override
+                public int compare(ActivityDto left, ActivityDto right) {
+                    int scoreOrder = Double.compare(recommendationScore(right, normalizedInterests),
+                            recommendationScore(left, normalizedInterests));
+                    if (scoreOrder != 0) return scoreOrder;
+                    return safeDateTime(right.getPublishedAt()).compareTo(safeDateTime(left.getPublishedAt()));
+                }
+            });
+        }
+        int actualLimit = limit == null ? 10 : Math.max(1, Math.min(limit, 50));
+        return new ArrayList<ActivityDto>(activities.subList(0, Math.min(actualLimit, activities.size())));
     }
 
     public List<ActivityDto> findAll(String keyword, String category, String categories, String city, String fee,
@@ -129,6 +162,14 @@ public class ActivityService {
                 }, activityId);
     }
 
+    public List<Map<String, Object>> participants(String activityId) {
+        return jdbc.queryForList(
+            "select r.status, u.id, u.nickname, u.avatar, u.city, u.interests " +
+            "from registrations r join users u on u.id = r.user_id " +
+            "where r.activity_id = ? and r.status in ('已报名','已签到') " +
+            "order by r.created_at asc", activityId);
+    }
+
     @Transactional
     public ActivityDto create(ActivityCreateRequest request) {
         return create(request, DbSupport.safe(request.getOrganizerId(), UserService.DEFAULT_USER_ID));
@@ -137,6 +178,7 @@ public class ActivityService {
     @Transactional
     public ActivityDto create(ActivityCreateRequest request, String organizerId) {
         validateForSubmit(request);
+        ensureTeamCanAcceptActivity(request.getTeamId());
         String id = DbSupport.id("act");
         IntegrationService.ModerationResult moderation = integrationService == null
                 ? localModeration(request)
@@ -344,44 +386,176 @@ public class ActivityService {
     }
 
     @Transactional
+    public ActivityOpsDtos.SummaryClassificationDto classifySummaryImages(String activityId, String userId, ActivityOpsDtos.SummaryClassifyRequest request) {
+        ActivityDto activity = requireActivity(activityId);
+        if (!userId.equals(activity.getOrganizer().getId())) throw new IllegalStateException("只有发起人可以整理活动总结");
+        if (!"已结束".equals(activity.getStatus())) throw new IllegalStateException("活动结束后才能整理正式总结");
+        List<String> urls = request == null ? null : request.getImageUrls();
+        if (urls == null || urls.isEmpty()) throw new IllegalStateException("请先上传至少一张活动图片");
+        IntegrationService.ImageClassificationResult result = integrationService == null
+                ? new IntegrationService.ImageClassificationResult(localImageCategories(urls.size()), false, "AI 服务不可用，请手动确认图片分类。")
+                : integrationService.classifyImagesDetailed(urls);
+        return new ActivityOpsDtos.SummaryClassificationDto(result.categories, result.aiAvailable, result.notice);
+    }
+
+    @Transactional
     public ActivityOpsDtos.SummaryDto publishSummary(String activityId, String userId, ActivityOpsDtos.SummaryRequest request) {
         ActivityDto activity = requireActivity(activityId);
         if (!userId.equals(activity.getOrganizer().getId())) throw new IllegalStateException("只有发起人可以发布活动总结");
         if (!"已结束".equals(activity.getStatus())) throw new IllegalStateException("活动结束后才能发布正式总结");
+        if (request == null) throw new IllegalStateException("请填写活动总结");
         if (request.getTitle() == null || request.getTitle().trim().isEmpty()) throw new IllegalStateException("总结标题不能为空");
         if (request.getContent() == null || request.getContent().trim().isEmpty()) throw new IllegalStateException("总结正文不能为空");
-        String summaryId = DbSupport.id("sum");
-        jdbc.update("insert into activity_summaries (id,activity_id,author_id,title,content) values (?,?,?,?,?)",
-                summaryId, activityId, userId, request.getTitle().trim(), request.getContent().trim());
-        List<String> categories = integrationService == null ? Collections.<String>emptyList() : integrationService.classifyImages(request.getImageUrls());
-        int order = 1;
-        if (request.getImageUrls() != null) {
-            for (int i = 0; i < request.getImageUrls().size(); i++) {
-                String aiCategory = i < categories.size() ? categories.get(i) : "过程记录";
-                String confirmed = request.getConfirmedCategories() != null && i < request.getConfirmedCategories().size() ? request.getConfirmedCategories().get(i) : aiCategory;
-                jdbc.update("insert into summary_images (id,summary_id,url,ai_category,confirmed_category,rank_order) values (?,?,?,?,?,?)",
-                        DbSupport.id("simg"), summaryId, request.getImageUrls().get(i), aiCategory, confirmed, order++);
-            }
+        if (request.getImageUrls() == null || request.getImageUrls().isEmpty()) throw new IllegalStateException("图文总结至少需要一张图片");
+        if (request.getConfirmedCategories() == null || request.getConfirmedCategories().size() != request.getImageUrls().size()) {
+            throw new IllegalStateException("请先确认每张图片的分类");
         }
-        ActivityOpsDtos.SummaryDto dto = new ActivityOpsDtos.SummaryDto();
-        dto.setId(summaryId);
-        dto.setActivityId(activityId);
-        dto.setTitle(request.getTitle());
-        dto.setContent(request.getContent());
-        dto.setImageUrls(request.getImageUrls());
-        dto.setCategories(categories);
-        return dto;
+        for (String category : request.getConfirmedCategories()) {
+            if (!SUMMARY_CATEGORIES.contains(category)) throw new IllegalStateException("图片分类无效");
+        }
+        IntegrationService.ImageClassificationResult classification = integrationService == null
+                ? new IntegrationService.ImageClassificationResult(localImageCategories(request.getImageUrls().size()), false, "")
+                : integrationService.classifyImagesDetailed(request.getImageUrls());
+        List<String> existing = jdbc.queryForList("select id from activity_summaries where activity_id = ? and author_id = ? order by created_at desc limit 1", String.class, activityId, userId);
+        String summaryId;
+        if (existing.isEmpty()) {
+            summaryId = DbSupport.id("sum");
+            jdbc.update("insert into activity_summaries (id,activity_id,author_id,title,content) values (?,?,?,?,?)",
+                    summaryId, activityId, userId, request.getTitle().trim(), request.getContent().trim());
+        } else {
+            summaryId = existing.get(0);
+            jdbc.update("update activity_summaries set title = ?, content = ?, status = '已发布', updated_at = now() where id = ?",
+                    request.getTitle().trim(), request.getContent().trim(), summaryId);
+            jdbc.update("delete from summary_images where summary_id = ?", summaryId);
+        }
+        int order = 1;
+        for (int i = 0; i < request.getImageUrls().size(); i++) {
+            String aiCategory = i < classification.categories.size() ? classification.categories.get(i) : "过程记录";
+            String confirmed = request.getConfirmedCategories().get(i);
+            jdbc.update("insert into summary_images (id,summary_id,url,ai_category,confirmed_category,rank_order) values (?,?,?,?,?,?)",
+                    DbSupport.id("simg"), summaryId, request.getImageUrls().get(i), aiCategory, confirmed, order++);
+        }
+        return summaryFor(activityId);
     }
 
     @Transactional
-    public void reviewActivity(String activityId, String userId, ActivityOpsDtos.ReviewRequest request) {
+    public ActivityOpsDtos.ReviewDto reviewActivity(String activityId, String userId, ActivityOpsDtos.ReviewRequest request) {
         ActivityDto activity = requireActivity(activityId);
         if (!"已结束".equals(activity.getStatus())) throw new IllegalStateException("活动结束后才能评价");
         Integer count = jdbc.queryForObject("select count(*) from registrations where activity_id = ? and user_id = ? and status in ('已报名','已签到')", Integer.class, activityId, userId);
         if (count == null || count == 0) throw new IllegalStateException("未参加活动不可评价");
+        LocalDateTime deadline = reviewDeadline(activityId);
+        if (deadline == null || LocalDateTime.now().isAfter(deadline)) throw new IllegalStateException("评价期限已结束");
+        if (request == null) throw new IllegalStateException("请填写评价");
         if (request.getRating() < 1 || request.getRating() > 5) throw new IllegalStateException("评分必须在 1 到 5 之间");
         jdbc.update("insert into activity_reviews_user (id,activity_id,user_id,rating,content) values (?,?,?,?,?) on duplicate key update rating = values(rating), content = values(content), created_at = now()",
                 DbSupport.id("arev"), activityId, userId, request.getRating(), request.getContent());
+        List<ActivityOpsDtos.ReviewDto> rows = reviewsFor(activityId, userId);
+        for (ActivityOpsDtos.ReviewDto row : rows) if (row.isMine()) return row;
+        throw new IllegalStateException("评价保存失败");
+    }
+
+    public ActivityOpsDtos.AfterEventDto afterEvent(String activityId, String userId) {
+        ActivityDto activity = requireActivity(activityId);
+        ActivityOpsDtos.AfterEventDto dto = new ActivityOpsDtos.AfterEventDto();
+        ActivityOpsDtos.SummaryDto summary = summaryFor(activityId);
+        List<ActivityOpsDtos.ReviewDto> reviews = reviewsFor(activityId, userId);
+        dto.setSummary(summary);
+        dto.setReviews(reviews);
+        dto.setReviewCount(reviews.size());
+        int total = 0;
+        for (ActivityOpsDtos.ReviewDto review : reviews) {
+            total += review.getRating();
+            if (review.isMine()) dto.setMyReview(review);
+        }
+        dto.setAverageRating(reviews.isEmpty() ? 0 : Math.round((total * 10.0 / reviews.size())) / 10.0);
+        boolean ended = "已结束".equals(activity.getStatus());
+        LocalDateTime deadline = reviewDeadline(activityId);
+        boolean expired = deadline != null && LocalDateTime.now().isAfter(deadline);
+        dto.setReviewDeadline(deadline == null ? null : deadline.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        dto.setReviewExpired(expired);
+        dto.setCanPublishSummary(ended && userId != null && userId.equals(activity.getOrganizer().getId()));
+        boolean participated = userId != null && isParticipant(activityId, userId);
+        dto.setCanReview(ended && participated && !expired);
+        if (!ended) dto.setEligibilityMessage("活动结束后将开放总结与评价");
+        else if (userId == null) dto.setEligibilityMessage("登录后可查看你的评价资格");
+        else if (!participated && !userId.equals(activity.getOrganizer().getId())) dto.setEligibilityMessage("仅活动参与者可提交评价");
+        else if (expired) dto.setEligibilityMessage("本次活动的 14 天评价期已结束");
+        else dto.setEligibilityMessage("评价期内可修改已提交的评价");
+        return dto;
+    }
+
+    private ActivityOpsDtos.SummaryDto summaryFor(String activityId) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "select s.*,u.nickname author_name,u.avatar author_avatar from activity_summaries s join users u on u.id = s.author_id where s.activity_id = ? and s.status = '已发布' order by s.updated_at desc limit 1",
+                activityId);
+        if (rows.isEmpty()) return null;
+        Map<String, Object> row = rows.get(0);
+        ActivityOpsDtos.SummaryDto dto = new ActivityOpsDtos.SummaryDto();
+        dto.setId(String.valueOf(row.get("id")));
+        dto.setActivityId(activityId);
+        dto.setAuthorId(String.valueOf(row.get("author_id")));
+        dto.setAuthorName(String.valueOf(row.get("author_name")));
+        dto.setAuthorAvatar(row.get("author_avatar") == null ? "" : String.valueOf(row.get("author_avatar")));
+        dto.setTitle(String.valueOf(row.get("title")));
+        dto.setContent(String.valueOf(row.get("content")));
+        Object createdAt = row.get("created_at");
+        if (createdAt instanceof Timestamp) {
+            dto.setCreatedAt(formatDateTime((Timestamp) createdAt));
+        } else if (createdAt instanceof LocalDateTime) {
+            dto.setCreatedAt(((LocalDateTime) createdAt).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        } else {
+            dto.setCreatedAt(createdAt == null ? null : String.valueOf(createdAt));
+        }
+        List<ActivityOpsDtos.SummaryImageDto> images = jdbc.query(
+                "select url,ai_category,confirmed_category from summary_images where summary_id = ? order by rank_order asc",
+                (rs, rowNum) -> new ActivityOpsDtos.SummaryImageDto(rs.getString("url"), rs.getString("ai_category"), rs.getString("confirmed_category")),
+                dto.getId());
+        dto.setImages(images);
+        List<String> urls = new ArrayList<String>();
+        List<String> categories = new ArrayList<String>();
+        for (ActivityOpsDtos.SummaryImageDto image : images) {
+            urls.add(image.getUrl());
+            categories.add(image.getConfirmedCategory());
+        }
+        dto.setImageUrls(urls);
+        dto.setCategories(categories);
+        return dto;
+    }
+
+    private List<ActivityOpsDtos.ReviewDto> reviewsFor(String activityId, String currentUserId) {
+        return jdbc.query(
+                "select r.*,u.nickname,u.avatar from activity_reviews_user r join users u on u.id = r.user_id where r.activity_id = ? order by r.created_at desc",
+                (rs, rowNum) -> {
+                    ActivityOpsDtos.ReviewDto dto = new ActivityOpsDtos.ReviewDto();
+                    dto.setId(rs.getString("id"));
+                    dto.setUserId(rs.getString("user_id"));
+                    dto.setNickname(rs.getString("nickname"));
+                    dto.setAvatar(rs.getString("avatar"));
+                    dto.setRating(rs.getInt("rating"));
+                    dto.setContent(rs.getString("content"));
+                    dto.setCreatedAt(formatDateTime(rs.getTimestamp("created_at")));
+                    dto.setMine(currentUserId != null && currentUserId.equals(rs.getString("user_id")));
+                    return dto;
+                }, activityId);
+    }
+
+    private boolean isParticipant(String activityId, String userId) {
+        Integer count = jdbc.queryForObject(
+                "select count(*) from registrations where activity_id = ? and user_id = ? and status in ('已报名','已签到')",
+                Integer.class, activityId, userId);
+        return count != null && count > 0;
+    }
+
+    private LocalDateTime reviewDeadline(String activityId) {
+        List<Timestamp> rows = jdbc.queryForList("select end_at from activities where id = ? and end_at is not null", Timestamp.class, activityId);
+        return rows.isEmpty() ? null : rows.get(0).toLocalDateTime().plusDays(REVIEW_WINDOW_DAYS);
+    }
+
+    private List<String> localImageCategories(int size) {
+        List<String> result = new ArrayList<String>();
+        for (int i = 0; i < size; i++) result.add(SUMMARY_CATEGORIES.get(i % SUMMARY_CATEGORIES.size()));
+        return result;
     }
 
     @Transactional
@@ -419,6 +593,9 @@ public class ActivityService {
         List<ActivityDto> result = new ArrayList<ActivityDto>();
         for (ActivityDto item : items) {
             String haystack = (item.getTitle() + item.getSummary() + item.getDescription() + DbSupport.join(item.getTags())).toLowerCase(Locale.CHINA);
+            if (item.getOrganizer() != null) {
+                haystack += (item.getOrganizer().getNickname() + item.getOrganizer().getEmail() + item.getOrganizer().getId()).toLowerCase(Locale.CHINA);
+            }
             if (!normalized.isEmpty() && !haystack.contains(normalized)) continue;
             if (category != null && !category.isEmpty() && !category.equals(item.getCategory())) continue;
             if (status != null && !status.isEmpty() && !status.startsWith("全部") && !status.equals(item.getStatus())) continue;
@@ -491,6 +668,7 @@ public class ActivityService {
                 activity.setMinAge(rs.getInt("min_age"));
                 activity.setJoinFields(DbSupport.split(rs.getString("join_fields")));
                 activity.setOfflineReason(rs.getString("offline_reason"));
+                activity.setPublishedAt(formatDateTime(rs.getTimestamp("published_at")));
                 activity.setUpdatedAt(formatDateTime(rs.getTimestamp("updated_at")));
                 activity.setTags(tagsFor(activity.getId()));
                 activity.setOrganizer(userService.findById(rs.getString("organizer_id")));
@@ -513,6 +691,106 @@ public class ActivityService {
         }
     }
 
+    private double recommendationScore(ActivityDto activity, Set<String> interests) {
+        Set<String> activityTags = new HashSet<String>();
+        for (String tag : activity.getTags()) activityTags.add(canonicalInterest(tag));
+
+        int tagAndTextScore = 0;
+        String text = normalizeText(activity.getTitle() + " " + activity.getSummary() + " " + activity.getDescription());
+        for (String interest : interests) {
+            if (activityTags.contains(interest)) {
+                tagAndTextScore += 30;
+            } else if (text.contains(interest)) {
+                tagAndTextScore += 10;
+            }
+        }
+        tagAndTextScore = Math.min(60, tagAndTextScore);
+
+        Set<String> categoryMatches = CATEGORY_INTERESTS.get(canonicalInterest(activity.getCategory()));
+        int categoryScore = categoryMatches != null && !Collections.disjoint(categoryMatches, interests) ? 20 : 0;
+        double signupRate = activity.getCapacity() <= 0 ? 0
+                : Math.min(1D, (double) activity.getJoined() / activity.getCapacity());
+        double popularityScore = signupRate * 7D + Math.min(5D, activity.getJoined() / 4D);
+        int featuredScore = Boolean.TRUE.equals(activity.getFeatured()) ? 5 : 0;
+        int freshnessScore = freshnessScore(activity.getPublishedAt());
+        return tagAndTextScore + categoryScore + popularityScore + featuredScore + freshnessScore;
+    }
+
+    private int freshnessScore(String publishedAt) {
+        LocalDateTime published = safeDateTime(publishedAt);
+        if (published.equals(LocalDateTime.MIN)) return 0;
+        long days = java.time.Duration.between(published, LocalDateTime.now()).toDays();
+        if (days <= 7) return 3;
+        if (days <= 30) return 2;
+        if (days <= 90) return 1;
+        return 0;
+    }
+
+    private LocalDateTime safeDateTime(String value) {
+        if (value == null || value.trim().isEmpty()) return LocalDateTime.MIN;
+        try {
+            return LocalDateTime.parse(value);
+        } catch (DateTimeParseException ex) {
+            return LocalDateTime.MIN;
+        }
+    }
+
+    private Set<String> normalizedInterests(List<String> interests) {
+        Set<String> result = new LinkedHashSet<String>();
+        if (interests == null) return result;
+        for (String interest : interests) {
+            String normalized = canonicalInterest(interest);
+            if (!normalized.isEmpty()) result.add(normalized);
+        }
+        return result;
+    }
+
+    private static String canonicalInterest(String value) {
+        String normalized = normalizeText(value);
+        String alias = INTEREST_ALIASES.get(normalized);
+        return alias == null ? normalized : alias;
+    }
+
+    private static String normalizeText(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.CHINA)
+                .replaceAll("[\\s_\\-—·]+", "");
+    }
+
+    private static Map<String, String> createInterestAliases() {
+        Map<String, String> aliases = new HashMap<String, String>();
+        addAliases(aliases, "城市探索", "城市探索", "城市漫步", "citywalk", "city walk");
+        addAliases(aliases, "徒步", "徒步", "轻徒步", "爬山", "登山");
+        addAliases(aliases, "桌游", "桌游", "桌游聚会", "棋牌");
+        addAliases(aliases, "摄影", "摄影", "摄影友好", "拍照");
+        addAliases(aliases, "飞盘", "飞盘", "极限飞盘");
+        addAliases(aliases, "咖啡", "咖啡", "咖啡探店");
+        addAliases(aliases, "骑行", "骑行", "单车");
+        addAliases(aliases, "露营", "露营", "野营");
+        addAliases(aliases, "公益", "公益", "志愿者", "志愿服务");
+        addAliases(aliases, "运动健身", "运动健身", "健身");
+        addAliases(aliases, "学习交流", "学习交流", "读书", "阅读", "分享会");
+        return aliases;
+    }
+
+    private static void addAliases(Map<String, String> aliases, String canonical, String... values) {
+        for (String value : values) aliases.put(normalizeText(value), canonical);
+    }
+
+    private static Map<String, Set<String>> createCategoryInterests() {
+        Map<String, Set<String>> categories = new HashMap<String, Set<String>>();
+        categories.put("城市探索", setOf("城市探索", "摄影", "咖啡"));
+        categories.put("户外运动", setOf("徒步", "飞盘", "骑行", "露营"));
+        categories.put("桌游", setOf("桌游"));
+        categories.put("学习交流", setOf("学习交流", "摄影"));
+        categories.put("运动健身", setOf("运动健身", "飞盘", "骑行"));
+        categories.put("公益活动", setOf("公益"));
+        return categories;
+    }
+
+    private static Set<String> setOf(String... values) {
+        return new HashSet<String>(Arrays.asList(values));
+    }
+
     private void validateForSubmit(ActivityCreateRequest request) {
         if (request.getTitle() == null || request.getTitle().trim().isEmpty()) throw new IllegalStateException("活动名称不能为空");
         if (request.getSummary() == null || request.getSummary().trim().isEmpty()) throw new IllegalStateException("活动简介不能为空");
@@ -528,6 +806,13 @@ public class ActivityService {
         if (!endAt.isAfter(startAt)) throw new IllegalStateException("活动结束时间需要晚于开始时间");
         if (!startAt.isAfter(LocalDateTime.now())) throw new IllegalStateException("活动开始时间需要晚于当前时间");
         if (deadline.isAfter(startAt)) throw new IllegalStateException("报名截止时间不能晚于活动开始时间");
+    }
+
+    private void ensureTeamCanAcceptActivity(String teamId) {
+        if (teamId == null || teamId.trim().isEmpty()) return;
+        List<String> statuses = jdbc.queryForList("select status from teams where id = ?", String.class, teamId);
+        if (statuses.isEmpty()) throw new NoSuchElementException("小队不存在");
+        if (!"正常".equals(statuses.get(0))) throw new IllegalStateException("小队已停用，暂不可新增活动");
     }
 
     private void validateDraftForSubmit(ActivityDto draft) {

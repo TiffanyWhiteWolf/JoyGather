@@ -69,4 +69,28 @@ public class MessageController {
         String userId = userService.requireToken(authorization).getId();
         return ApiResponse.success(messageService.forward(id, request.getConversationId(), userId));
     }
+
+    @PostMapping("/{id}/pin")
+    public ApiResponse<Void> togglePin(@PathVariable String id,
+                                       @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        messageService.togglePin(id, userId);
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/{id}/mute")
+    public ApiResponse<Void> toggleMute(@PathVariable String id,
+                                        @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        messageService.toggleMute(id, userId);
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/{id}/read")
+    public ApiResponse<Void> markRead(@PathVariable String id,
+                                      @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        messageService.markConversationRead(id, userId);
+        return ApiResponse.success(null);
+    }
 }

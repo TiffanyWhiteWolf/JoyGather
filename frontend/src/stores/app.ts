@@ -9,6 +9,9 @@ export const useAppStore = defineStore('app', () => {
   const joinedActivityIds = ref<string[]>([])
   const waitingActivityIds = ref<string[]>([])
   const teamRoles = ref<Record<string, string>>({})
+  const friendIds = ref<string[]>([])
+  const followedIds = ref<string[]>([])
+  const blockedIds = ref<string[]>([])
   const draft = ref<ActivityDraft | null>(null)
   const submittedActivities = ref<ActivityDraft[]>([])
   const toast = ref('')
@@ -59,6 +62,33 @@ export const useAppStore = defineStore('app', () => {
     showToast('已加入小队，群聊已同步开放')
   }
 
+  function addFriend(id: string) {
+    if (!friendIds.value.includes(id)) friendIds.value.push(id)
+    if (!followedIds.value.includes(id)) followedIds.value.push(id)
+  }
+
+  function removeFriend(id: string) {
+    friendIds.value = friendIds.value.filter(item => item !== id)
+    followedIds.value = followedIds.value.filter(item => item !== id)
+  }
+
+  function addFollowedId(id: string) {
+    if (!followedIds.value.includes(id)) followedIds.value.push(id)
+  }
+
+  function removeFollowedId(id: string) {
+    followedIds.value = followedIds.value.filter(item => item !== id)
+    friendIds.value = friendIds.value.filter(item => item !== id)
+  }
+
+  function addBlockedId(id: string) {
+    if (!blockedIds.value.includes(id)) blockedIds.value.push(id)
+  }
+
+  function removeBlockedId(id: string) {
+    blockedIds.value = blockedIds.value.filter(item => item !== id)
+  }
+
   function saveDraft(value: ActivityDraft) {
     draft.value = { ...value, updatedAt: new Date().toLocaleString('zh-CN', { hour12: false }) }
     showToast('草稿已保存，可稍后继续编辑')
@@ -79,6 +109,9 @@ export const useAppStore = defineStore('app', () => {
     joinedActivityIds.value = []
     waitingActivityIds.value = []
     teamRoles.value = {}
+    friendIds.value = []
+    followedIds.value = []
+    blockedIds.value = []
     draft.value = null
     submittedActivities.value = []
   }
@@ -102,13 +135,29 @@ export const useAppStore = defineStore('app', () => {
     } catch {
       teamRoles.value = {}
     }
+    try {
+      const friends = await apiGet<{ userId: string }[]>('/friends')
+      friendIds.value = friends.map(f => f.userId)
+    } catch {
+      friendIds.value = []
+    }
+    try {
+      followedIds.value = await apiGet<string[]>('/follows/me')
+    } catch {
+      followedIds.value = []
+    }
+    try {
+      blockedIds.value = await apiGet<string[]>('/blocks/me')
+    } catch {
+      blockedIds.value = []
+    }
   }
 
   const registrationCount = computed(() => joinedActivityIds.value.length)
 
   return {
-    city, notifications, joinedActivityIds, waitingActivityIds, joinedTeamIds, teamRoles, draft, submittedActivities, toast,
-    registrationCount, showToast, joinActivity, cancelRegistration, joinTeam, saveDraft, clearDraft, submitActivity, clearUserState, refreshUserState,
+    city, notifications, joinedActivityIds, waitingActivityIds, joinedTeamIds, teamRoles, friendIds, followedIds, blockedIds, draft, submittedActivities, toast,
+    registrationCount, showToast, joinActivity, cancelRegistration, joinTeam, addFriend, removeFriend, addFollowedId, removeFollowedId, addBlockedId, removeBlockedId, saveDraft, clearDraft, submitActivity, clearUserState, refreshUserState,
     myTeamRole, isTeamOwner, isTeamAdmin,
   }
 })

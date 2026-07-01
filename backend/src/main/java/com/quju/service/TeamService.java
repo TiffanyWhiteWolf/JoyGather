@@ -28,8 +28,11 @@ public class TeamService {
 
     public List<TeamDto> list(String query, boolean includeStopped, String userId) {
         String normalized = "%" + (query == null ? "" : query.trim().toLowerCase()) + "%";
-        String sql = "select * from teams where (? = true or status = '正常') and (lower(name) like ? or lower(tags) like ?) order by active_now desc, members_count desc";
-        List<TeamDto> teams = jdbc.query(sql, mapper(), includeStopped, normalized, normalized);
+        String sql = "select t.* from teams t left join users owner on owner.id = t.owner_id "
+                + "where (? = true or t.status = '正常') "
+                + "and (lower(t.name) like ? or lower(t.tags) like ? or lower(owner.nickname) like ?) "
+                + "order by t.active_now desc, t.members_count desc";
+        List<TeamDto> teams = jdbc.query(sql, mapper(), includeStopped, normalized, normalized, normalized);
         if (userId != null) populateMyRoles(teams, userId);
         return teams;
     }
@@ -70,6 +73,7 @@ public class TeamService {
 
     @Transactional
     public TeamDto approveJoin(String teamId, String requestId, String actorId) {
+        requireActive(teamId, "小队已停用，暂不可新增成员");
         requireTeamAdmin(teamId, actorId);
         List<String> users = jdbc.queryForList("select user_id from team_join_requests where id = ? and team_id = ? and status = '待审核'", String.class, requestId, teamId);
         if (users.isEmpty()) throw new IllegalStateException("申请不存在或已处理");
@@ -89,16 +93,24 @@ public class TeamService {
     }
 
     @Transactional
-    public void dissolve(String teamId, String actorId) {
+    public void dissolve(String teamId, String actorId, TeamOpsDtos.DissolveRequest request) {
+        if (request == null || !request.isConfirmed() || !"解散小队".equals(DbSupport.safe(request.getConfirmationText(), "").trim())) {
+            throw new IllegalStateException("请二次确认解散小队");
+        }
+        TeamDto team = get(teamId);
+        if (!"正常".equals(team.getStatus())) throw new IllegalStateException("小队已停用");
         if (!"队长".equals(roleOf(teamId, actorId))) throw new IllegalStateException("仅队长可解散小队");
-        jdbc.update("update teams set status = '已停用', stop_reason = '队长解散' where id = ?", teamId);
+        jdbc.update("update teams set status = '已停用', stop_reason = '队长解散', members_count = 0, active_now = 0 where id = ?", teamId);
         jdbc.update("delete from team_members where team_id = ?", teamId);
+        jdbc.update("delete from conversation_participants where conversation_id in (select id from conversations where team_id = ?)", teamId);
         jdbc.update("update conversations set online = 0, last_message = '小队已解散' where team_id = ?", teamId);
+        jdbc.update("update activities set status = '已下架', offline_reason = '所属小队已解散' where team_id = ? and status not in ('草稿','已结束','已下架')", teamId);
         log(actorId, "DISSOLVE_TEAM", "TEAM", teamId, "队长解散");
     }
 
     @Transactional
     public void announcement(String teamId, String actorId, TeamOpsDtos.AnnouncementRequest request) {
+        requireActive(teamId, "小队已停用，暂不可新增内容");
         requireTeamAdmin(teamId, actorId);
         if (request.getContent() == null || request.getContent().trim().isEmpty()) throw new IllegalStateException("公告内容不能为空");
         jdbc.update("insert into team_announcements (id,team_id,author_id,content,mention_all) values (?,?,?,?,?)",
@@ -107,6 +119,7 @@ public class TeamService {
 
     @Transactional
     public void poll(String teamId, String actorId, TeamOpsDtos.PollRequest request) {
+        requireActive(teamId, "小队已停用，暂不可新增内容");
         requireMember(teamId, actorId);
         if (request.getTitle() == null || request.getTitle().trim().isEmpty()) throw new IllegalStateException("投票标题不能为空");
         if (request.getOptions() == null || request.getOptions().size() < 2) throw new IllegalStateException("投票至少需要两个选项");
@@ -120,6 +133,7 @@ public class TeamService {
 
     @Transactional
     public void addFile(String teamId, String actorId, TeamOpsDtos.TeamContentRequest request) {
+        requireActive(teamId, "小队已停用，暂不可新增内容");
         requireMember(teamId, actorId);
         if (request.getFileId() == null || request.getFileId().trim().isEmpty()) throw new IllegalStateException("文件不能为空");
         jdbc.update("insert into team_files (id,team_id,file_id,uploader_id) values (?,?,?,?)", DbSupport.id("tf"), teamId, request.getFileId(), actorId);
@@ -128,6 +142,7 @@ public class TeamService {
 
     @Transactional
     public void addAlbumPhoto(String teamId, String actorId, TeamOpsDtos.TeamContentRequest request) {
+        requireActive(teamId, "小队已停用，暂不可新增内容");
         requireMember(teamId, actorId);
         if (request.getUrl() == null || request.getUrl().trim().isEmpty()) throw new IllegalStateException("照片不能为空");
         jdbc.update("insert into team_albums (id,team_id,file_id,uploader_id,url,caption) values (?,?,?,?,?,?)",
@@ -247,6 +262,14 @@ public class TeamService {
         return rows.get(0);
     }
 
+    public TeamDto adminDetail(String id) {
+        TeamDto team = get(id);
+        team.setMemberRecords(jdbc.queryForList("select tm.user_id, u.nickname, u.avatar, tm.role, tm.status, tm.joined_at from team_members tm join users u on u.id = tm.user_id where tm.team_id = ? order by case tm.role when '队长' then 0 when '管理员' then 1 else 2 end, tm.joined_at asc", id));
+        team.setActivityRecords(jdbc.queryForList("select id,title,status,category,joined_count,capacity,updated_at from activities where team_id = ? order by updated_at desc", id));
+        team.setReportRecords(jdbc.queryForList("select tr.id, tr.reason, tr.status, tr.created_at, u.nickname reporter from team_reports tr left join users u on u.id = tr.reporter_id where tr.team_id = ? order by tr.created_at desc", id));
+        return team;
+    }
+
     public TeamDto get(String id, String userId) {
         TeamDto team = get(id);
         if (userId != null) {
@@ -274,11 +297,17 @@ public class TeamService {
                 team.setStatus(rs.getString("status"));
                 team.setStopReason(rs.getString("stop_reason"));
                 team.setOwnerId(rs.getString("owner_id"));
+                List<String> owners = jdbc.queryForList("select nickname from users where id = ?", String.class, team.getOwnerId());
+                team.setOwnerNickname(owners.isEmpty() ? "" : owners.get(0));
                 return team;
             }
         };
     }
 
+    private void requireActive(String teamId, String message) {
+        TeamDto team = get(teamId);
+        if (!"正常".equals(team.getStatus())) throw new IllegalStateException(message);
+    }
     private void populateMyRoles(List<TeamDto> teams, String userId) {
         if (teams.isEmpty()) return;
         List<String> ids = new ArrayList<>();

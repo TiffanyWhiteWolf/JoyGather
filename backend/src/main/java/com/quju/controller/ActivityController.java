@@ -55,6 +55,15 @@ public class ActivityController {
         return ApiResponse.success(activityService.findAll(keyword, category, categories, city, fee, time, distance, lat, lng, minLng, maxLng, minLat, maxLat, sort, page, size));
     }
 
+    @GetMapping("/recommendations")
+    public ApiResponse<List<ActivityDto>> recommendations(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) Integer limit) {
+        com.quju.dto.UserDto user = userService.optionalToken(authorization);
+        return ApiResponse.success(activityService.recommendations(
+                user == null ? null : user.getInterests(), limit));
+    }
+
     @GetMapping("/my")
     public ApiResponse<List<ActivityDto>> myActivities(@RequestHeader(value = "Authorization", required = false) String authorization) {
         String userId = userService.requireToken(authorization).getId();
@@ -133,6 +142,11 @@ public class ActivityController {
         return ApiResponse.success(activityService.cancel(id, userId));
     }
 
+    @GetMapping("/{id}/participants")
+    public ApiResponse<List<Map<String, Object>>> participants(@PathVariable String id) {
+        return ApiResponse.success(activityService.participants(id));
+    }
+
     @GetMapping("/registrations/me")
     public ApiResponse<Map<String, String>> myRegistrations(@RequestHeader(value = "Authorization", required = false) String authorization) {
         String userId = userService.requireToken(authorization).getId();
@@ -169,13 +183,30 @@ public class ActivityController {
         return ApiResponse.success(activityService.publishSummary(id, userId, request));
     }
 
-    @PostMapping("/{id}/reviews")
-    public ApiResponse<Void> review(@PathVariable String id,
-                                    @RequestBody ActivityOpsDtos.ReviewRequest request,
-                                    @RequestHeader(value = "Authorization", required = false) String authorization) {
+    @PostMapping("/{id}/summaries/classify")
+    public ApiResponse<ActivityOpsDtos.SummaryClassificationDto> classifySummaryImages(
+            @PathVariable String id,
+            @RequestBody ActivityOpsDtos.SummaryClassifyRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
         String userId = userService.requireToken(authorization).getId();
-        activityService.reviewActivity(id, userId, request);
-        return ApiResponse.success(null);
+        return ApiResponse.success(activityService.classifySummaryImages(id, userId, request));
+    }
+
+    @GetMapping("/{id}/after-event")
+    public ApiResponse<ActivityOpsDtos.AfterEventDto> afterEvent(
+            @PathVariable String id,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = authorization == null || authorization.trim().isEmpty()
+                ? null : userService.requireToken(authorization).getId();
+        return ApiResponse.success(activityService.afterEvent(id, userId));
+    }
+
+    @PostMapping("/{id}/reviews")
+    public ApiResponse<ActivityOpsDtos.ReviewDto> review(@PathVariable String id,
+                                                         @RequestBody ActivityOpsDtos.ReviewRequest request,
+                                                         @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String userId = userService.requireToken(authorization).getId();
+        return ApiResponse.success(activityService.reviewActivity(id, userId, request));
     }
 
     @PostMapping("/checkins/scan")

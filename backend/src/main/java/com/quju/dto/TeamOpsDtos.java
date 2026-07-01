@@ -39,6 +39,15 @@ public class TeamOpsDtos {
         public void setReason(String reason) { this.reason = reason; }
     }
 
+    public static class DissolveRequest {
+        private boolean confirmed;
+        private String confirmationText;
+        public boolean isConfirmed() { return confirmed; }
+        public void setConfirmed(boolean confirmed) { this.confirmed = confirmed; }
+        public String getConfirmationText() { return confirmationText; }
+        public void setConfirmationText(String confirmationText) { this.confirmationText = confirmationText; }
+    }
+
     public static class UpdateTeamRequest {
         private String name;
         private String description;

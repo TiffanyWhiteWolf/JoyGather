@@ -32,12 +32,28 @@ public class MessageService {
         }
         for (MessageDtos.ConversationDto conversation : rows) {
             conversation.setMessages(messages(conversation.getId(), userId));
+            List<Timestamp> lastSentList = jdbc.query(
+                "select sent_at from messages where conversation_id = ? order by sent_at desc limit 1",
+                (rs, n) -> rs.getTimestamp("sent_at"), conversation.getId());
+            if (!lastSentList.isEmpty()) conversation.setLastTime(DbSupport.relativeTime(lastSentList.get(0)));
+            // 好友会话：动态设置对方的 name、avatar、userId
+            if ("好友".equals(conversation.getType()) && !isWelcomeConversation(conversation.getId())) {
+                List<Map<String, Object>> others = jdbc.queryForList(
+                    "select u.id, u.nickname, u.avatar from conversation_participants cp join users u on u.id = cp.user_id where cp.conversation_id = ? and cp.user_id != ?",
+                    conversation.getId(), userId);
+                if (!others.isEmpty()) {
+                    Map<String, Object> other = others.get(0);
+                    conversation.setName(String.valueOf(other.get("nickname")));
+                    conversation.setAvatar(String.valueOf(other.get("avatar")));
+                    conversation.setFriendUserId(String.valueOf(other.get("id")));
+                }
+            }
         }
         return rows;
     }
 
     private List<MessageDtos.ConversationDto> findConversations(String userId) {
-        return jdbc.query("select c.* from conversations c join conversation_participants p on p.conversation_id = c.id where p.user_id = ? order by p.pinned desc, c.unread desc, c.id asc", conversationMapper(), userId);
+        return jdbc.query("select c.*, p.pinned, p.muted from conversations c join conversation_participants p on p.conversation_id = c.id where p.user_id = ? order by p.pinned desc, c.unread desc, c.id asc", conversationMapper(), userId);
     }
 
     private void ensureWelcomeConversation(String userId) {
@@ -59,12 +75,14 @@ public class MessageService {
 
     public List<MessageDtos.MessageDto> messages(String conversationId, String userId) {
         requireParticipant(conversationId, userId);
-        return jdbc.query("select * from messages where conversation_id = ? order by sent_at asc", messageMapper(userId), conversationId);
+        return jdbc.query("select m.*, u.avatar sender_avatar from messages m left join users u on u.id = m.sender_id where m.conversation_id = ? order by m.sent_at asc", messageMapper(userId), conversationId);
     }
 
     @Transactional
     public MessageDtos.MessageDto send(String conversationId, String senderId, MessageDtos.SendMessageRequest request) {
         requireParticipant(conversationId, senderId);
+        requireOpenConversation(conversationId);
+        requireActiveRelationship(conversationId, senderId);
         if (request == null) throw new IllegalStateException("消息内容不能为空");
         String type = DbSupport.safe(request.getType(), "TEXT");
         String content = DbSupport.safe(request.getContent(), "");
@@ -75,9 +93,27 @@ public class MessageService {
         String id = DbSupport.id("m");
         jdbc.update("insert into messages (id,conversation_id,sender_id,content,message_type,media_url,location_lat,location_lng,mine,read_flag) values (?,?,?,?,?,?,?,?,?,?)",
                 id, conversationId, senderId, content.trim(), type, request.getMediaUrl(), request.getLatitude(), request.getLongitude(), true, false);
-        jdbc.update("update conversations set last_message = ?, last_time = '刚刚' where id = ?", displayContent(type, content), conversationId);
+        jdbc.update("update conversations set last_message = ?, last_time = ? where id = ?", displayContent(type, content), DbSupport.relativeTime(new Timestamp(System.currentTimeMillis())), conversationId);
         jdbc.update("update conversations set unread = unread + 1 where id = ?", conversationId);
-        return jdbc.queryForObject("select * from messages where id = ?", messageMapper(senderId), id);
+        return jdbc.queryForObject("select m.*, u.avatar sender_avatar from messages m left join users u on u.id = m.sender_id where m.id = ?", messageMapper(senderId), id);
+    }
+
+    @Transactional
+    public void togglePin(String conversationId, String userId) {
+        requireParticipant(conversationId, userId);
+        jdbc.update("update conversation_participants set pinned = 1 - pinned where conversation_id = ? and user_id = ?", conversationId, userId);
+    }
+
+    @Transactional
+    public void toggleMute(String conversationId, String userId) {
+        requireParticipant(conversationId, userId);
+        jdbc.update("update conversation_participants set muted = 1 - muted where conversation_id = ? and user_id = ?", conversationId, userId);
+    }
+
+    @Transactional
+    public void markConversationRead(String conversationId, String userId) {
+        requireParticipant(conversationId, userId);
+        jdbc.update("update conversations set unread = 0 where id = ?", conversationId);
     }
 
     @Transactional
@@ -95,8 +131,8 @@ public class MessageService {
         if (rows.isEmpty()) throw new java.util.NoSuchElementException("消息不存在");
         java.util.Map<String, Object> row = rows.get(0);
         if (!userId.equals(String.valueOf(row.get("sender_id")))) throw new IllegalStateException("只能撤回自己发送的消息");
-        Timestamp sentAt = (Timestamp) row.get("sent_at");
-        if (sentAt != null && sentAt.toLocalDateTime().isBefore(LocalDateTime.now().minusMinutes(2))) throw new IllegalStateException("消息发送超过 2 分钟，不能撤回");
+        LocalDateTime sentAt = toLocalDateTime(row.get("sent_at"));
+        if (sentAt != null && sentAt.isBefore(LocalDateTime.now().minusMinutes(2))) throw new IllegalStateException("消息发送超过 2 分钟，不能撤回");
         jdbc.update("update messages set recalled = 1, recalled_at = now(), content = '消息已撤回' where id = ?", messageId);
     }
 
@@ -106,11 +142,14 @@ public class MessageService {
         List<java.util.Map<String, Object>> rows = jdbc.queryForList("select * from messages where id = ?", messageId);
         if (rows.isEmpty()) throw new java.util.NoSuchElementException("消息不存在");
         java.util.Map<String, Object> row = rows.get(0);
+        if (isTruthy(row.get("recalled"))) throw new IllegalStateException("已撤回的消息不能转发");
         requireParticipant(String.valueOf(row.get("conversation_id")), userId);
         MessageDtos.SendMessageRequest request = new MessageDtos.SendMessageRequest();
         request.setContent(String.valueOf(row.get("content")));
         request.setType(String.valueOf(row.get("message_type")));
         request.setMediaUrl((String) row.get("media_url"));
+        request.setLatitude(row.get("location_lat") == null ? null : ((Number) row.get("location_lat")).doubleValue());
+        request.setLongitude(row.get("location_lng") == null ? null : ((Number) row.get("location_lng")).doubleValue());
         MessageDtos.MessageDto created = send(targetConversationId, userId, request);
         jdbc.update("update messages set forwarded_from_id = ? where id = ?", messageId, created.getId());
         return created;
@@ -129,6 +168,9 @@ public class MessageService {
                 item.setLastTime(rs.getString("last_time"));
                 item.setOnline(rs.getBoolean("online"));
                 item.setTeamId(rs.getString("team_id"));
+                item.setPinned(rs.getBoolean("pinned"));
+                item.setMuted(rs.getBoolean("muted"));
+                item.setFriendUserId(rs.getString("friend_user_id"));
                 return item;
             }
         };
@@ -146,9 +188,11 @@ public class MessageService {
                 item.setLatitude(rs.getObject("location_lat") == null ? null : rs.getDouble("location_lat"));
                 item.setLongitude(rs.getObject("location_lng") == null ? null : rs.getDouble("location_lng"));
                 item.setTime(DbSupport.formatTime(rs.getTimestamp("sent_at")));
+                item.setSentAt(rs.getTimestamp("sent_at") == null ? null : rs.getTimestamp("sent_at").toInstant().toString());
                 item.setMine(currentUserId != null && currentUserId.equals(rs.getString("sender_id")));
                 item.setRead(rs.getBoolean("read_flag"));
                 item.setRecalled(rs.getBoolean("recalled"));
+                item.setSenderAvatar(rs.getString("sender_avatar"));
                 return item;
             }
         };
@@ -157,6 +201,49 @@ public class MessageService {
     private void requireParticipant(String conversationId, String userId) {
         Integer count = jdbc.queryForObject("select count(*) from conversation_participants where conversation_id = ? and user_id = ?", Integer.class, conversationId, userId);
         if (count == null || count == 0) throw new IllegalStateException("非好友且非同队关系不可发送消息");
+    }
+
+    private void requireOpenConversation(String conversationId) {
+        Integer count = jdbc.queryForObject("select count(*) from conversations where id = ? and team_id is not null and online = false", Integer.class, conversationId);
+        if (count != null && count > 0) throw new IllegalStateException("小队已解散，群聊停止使用");
+    }
+
+    private void requireActiveRelationship(String conversationId, String userId) {
+        List<Map<String, Object>> conversations = jdbc.queryForList("select type, team_id from conversations where id = ?", conversationId);
+        if (conversations.isEmpty()) throw new java.util.NoSuchElementException("会话不存在");
+        Map<String, Object> conversation = conversations.get(0);
+        String type = String.valueOf(conversation.get("type"));
+        Object teamId = conversation.get("team_id");
+        if ("好友".equals(type) && !isWelcomeConversation(conversationId)) {
+            List<String> others = jdbc.queryForList(
+                    "select user_id from conversation_participants where conversation_id = ? and user_id != ?",
+                    String.class, conversationId, userId);
+            if (others.isEmpty()) throw new IllegalStateException("非好友且非同队关系不可发送消息");
+            Integer count = jdbc.queryForObject("select count(*) from friendships where user_id = ? and friend_id = ?", Integer.class, userId, others.get(0));
+            if (count == null || count == 0) throw new IllegalStateException("你们还不是好友，不能发送消息");
+        }
+        if (teamId != null) {
+            Integer count = jdbc.queryForObject("select count(*) from team_members where team_id = ? and user_id = ?", Integer.class, String.valueOf(teamId), userId);
+            if (count == null || count == 0) throw new IllegalStateException("非好友且非同队关系不可发送消息");
+        }
+    }
+
+    private boolean isWelcomeConversation(String conversationId) {
+        return conversationId != null && conversationId.startsWith("welcome-");
+    }
+
+    private boolean isTruthy(Object value) {
+        if (value instanceof Boolean) return (Boolean) value;
+        if (value instanceof Number) return ((Number) value).intValue() != 0;
+        return value != null && Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    private LocalDateTime toLocalDateTime(Object value) {
+        if (value == null) return null;
+        if (value instanceof LocalDateTime) return (LocalDateTime) value;
+        if (value instanceof Timestamp) return ((Timestamp) value).toLocalDateTime();
+        if (value instanceof java.util.Date) return new Timestamp(((java.util.Date) value).getTime()).toLocalDateTime();
+        return LocalDateTime.parse(String.valueOf(value).replace(' ', 'T'));
     }
 
     private void validateLocation(Double latitude, Double longitude) {

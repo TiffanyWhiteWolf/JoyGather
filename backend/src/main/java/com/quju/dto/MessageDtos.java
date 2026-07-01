@@ -13,6 +13,9 @@ public class MessageDtos {
         private String lastTime;
         private Boolean online;
         private String teamId;
+        private Boolean pinned;
+        private Boolean muted;
+        private String friendUserId;
         private List<MessageDto> messages;
         public String getId() { return id; }
         public void setId(String id) { this.id = id; }
@@ -32,6 +35,12 @@ public class MessageDtos {
         public void setOnline(Boolean online) { this.online = online; }
         public String getTeamId() { return teamId; }
         public void setTeamId(String teamId) { this.teamId = teamId; }
+        public Boolean getPinned() { return pinned; }
+        public void setPinned(Boolean pinned) { this.pinned = pinned; }
+        public Boolean getMuted() { return muted; }
+        public void setMuted(Boolean muted) { this.muted = muted; }
+        public String getFriendUserId() { return friendUserId; }
+        public void setFriendUserId(String friendUserId) { this.friendUserId = friendUserId; }
         public List<MessageDto> getMessages() { return messages; }
         public void setMessages(List<MessageDto> messages) { this.messages = messages; }
     }
@@ -48,6 +57,8 @@ public class MessageDtos {
         private Boolean mine;
         private Boolean read;
         private Boolean recalled;
+        private String senderAvatar;
+        private String sentAt;
         public String getId() { return id; }
         public void setId(String id) { this.id = id; }
         public String getSenderId() { return senderId; }
@@ -70,6 +81,10 @@ public class MessageDtos {
         public void setRead(Boolean read) { this.read = read; }
         public Boolean getRecalled() { return recalled; }
         public void setRecalled(Boolean recalled) { this.recalled = recalled; }
+        public String getSenderAvatar() { return senderAvatar; }
+        public void setSenderAvatar(String senderAvatar) { this.senderAvatar = senderAvatar; }
+        public String getSentAt() { return sentAt; }
+        public void setSentAt(String sentAt) { this.sentAt = sentAt; }
     }
 
     public static class SendMessageRequest {

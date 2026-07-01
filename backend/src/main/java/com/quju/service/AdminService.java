@@ -48,6 +48,9 @@ public class AdminService {
 
     @Transactional
     public void review(String id, String result, String reason, String handlerId) {
+        if ("已驳回".equals(result) && (reason == null || reason.trim().isEmpty())) {
+            throw new IllegalStateException("驳回时必须填写原因");
+        }
         List<Map<String, Object>> rows = jdbc.queryForList("select * from review_tasks where id = ?", id);
         if (rows.isEmpty()) throw new java.util.NoSuchElementException("审核任务不存在");
         String type = String.valueOf(rows.get(0).get("type"));
@@ -61,7 +64,11 @@ public class AdminService {
         if ("商家认证".equals(type)) {
             jdbc.update("update merchant_applications set status = ?, reason = ?, reviewed_at = now(), reviewer_id = ? where id = ?", result, reason, handlerId, targetId);
             if ("已通过".equals(result)) {
-                jdbc.update("update users u join merchant_applications m on m.user_id = u.id set u.verified = 1, u.role = '商家用户', u.merchant_name = m.merchant_name where m.id = ?", targetId);
+                List<Map<String, Object>> merchants = jdbc.queryForList("select user_id, merchant_name from merchant_applications where id = ?", targetId);
+                if (!merchants.isEmpty()) {
+                    jdbc.update("update users set verified = 1, role = '商家用户', merchant_name = ? where id = ?",
+                            merchants.get(0).get("merchant_name"), merchants.get(0).get("user_id"));
+                }
             }
         }
         log(handlerId, "HANDLE_REVIEW", "REVIEW", id, result + ":" + DbSupport.safe(reason, ""));
