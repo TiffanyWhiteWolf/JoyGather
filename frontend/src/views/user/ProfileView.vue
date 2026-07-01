@@ -81,6 +81,15 @@ const merchantFieldPresets = ['户外运动', '城市探索', '桌游聚会', '�
 const profile = reactive({ nickname: '', avatar: '', gender: '', birthday: '', city: '杭州', bio: '', interests: '' })
 const showCustomInterest = ref(false)
 const customInterestInput = ref('')
+const fieldErrors = reactive({ nickname: '', gender: '', birthday: '', city: '', bio: '' })
+
+type ProfileField = keyof typeof fieldErrors
+
+function clearFieldErrors() {
+  (Object.keys(fieldErrors) as ProfileField[]).forEach((key) => { fieldErrors[key] = '' })
+}
+
+const todayDate = computed(() => new Date().toISOString().slice(0, 10))
 
 const birthdayDisplay = computed(() => {
   if (!profile.birthday) return ''
@@ -169,8 +178,28 @@ function toggleMerchantField(field: string) {
   merchantForm.merchantFields = next.join('、')
 }
 
+function validateProfile(): boolean {
+  clearFieldErrors()
+  let valid = true
+  const nickname = profile.nickname.trim()
+  if (!nickname) { fieldErrors.nickname = '昵称不能为空'; valid = false }
+  else if (!/^[\u4e00-\u9fa5a-zA-Z0-9_\-]+$/.test(nickname)) { fieldErrors.nickname = '昵称只能包含中文、英文、数字、下划线和连字符'; valid = false }
+  if (profile.gender && !/^[\u4e00-\u9fa5a-zA-Z0-9_\-]+$/.test(profile.gender)) { fieldErrors.gender = '性别包含非法字符'; valid = false }
+  const city = profile.city.trim()
+  if (city && !/^[\u4e00-\u9fa5a-zA-Z0-9_\-]+$/.test(city)) { fieldErrors.city = '城市名称只能包含中文、英文、数字、下划线和连字符'; valid = false }
+  if (profile.birthday) {
+    const selected = new Date(profile.birthday)
+    const today = new Date()
+    today.setHours(23, 59, 59, 999)
+    if (selected > today) { fieldErrors.birthday = '生日不能是未来日期'; valid = false }
+  }
+  if (profile.bio && profile.bio.length > 100) { fieldErrors.bio = '个性签名不能超过100个字符'; valid = false }
+  return valid
+}
+
 async function saveProfile() {
   error.value = ''
+  if (!validateProfile()) return
   saving.value = true
   try {
     const updated = await apiPut<User>('/users/me', { ...profile, interests: parseInterestTags() })
@@ -399,16 +428,17 @@ async function cancelAccount() {
         </div>
       </div>
       <div class="form-grid">
-        <label>昵称<input v-model.trim="profile.nickname" class="input" /></label>
-        <label>性别<input v-model.trim="profile.gender" class="input" /></label>
+        <label>昵称<input v-model.trim="profile.nickname" class="input" maxlength="20" placeholder="中文、英文、数字、下划线和连字符" /><small>{{ profile.nickname.length }} / 20</small><p v-if="fieldErrors.nickname" class="field-error">{{ fieldErrors.nickname }}</p></label>
+        <label>性别<input v-model.trim="profile.gender" class="input" maxlength="10" placeholder="自由填写" /><small>{{ profile.gender.length }} / 10</small><p v-if="fieldErrors.gender" class="field-error">{{ fieldErrors.gender }}</p></label>
         <label>
           生日
           <div class="date-picker-wrapper">
-            <input v-model="profile.birthday" type="date" class="input date-native" />
+            <input v-model="profile.birthday" type="date" class="input date-native" :max="todayDate" />
             <span class="date-overlay" aria-hidden="true">{{ birthdayDisplay || '请选择生日' }}</span>
           </div>
+          <p v-if="fieldErrors.birthday" class="field-error">{{ fieldErrors.birthday }}</p>
         </label>
-        <label>城市<input v-model.trim="profile.city" class="input" /></label>
+        <label>城市<input v-model.trim="profile.city" class="input" maxlength="20" placeholder="中文、英文、数字、下划线和连字符" /><small>{{ profile.city.length }} / 20</small><p v-if="fieldErrors.city" class="field-error">{{ fieldErrors.city }}</p></label>
       </div>
       <label class="interest-editor">
         兴趣标签
@@ -424,7 +454,7 @@ async function cancelAccount() {
           <button type="button" class="btn btn-primary" @click="addCustomInterest">添加</button>
         </div>
       </label>
-      <label>个性签名<textarea v-model.trim="profile.bio" class="textarea"></textarea></label>
+      <label>个性签名<textarea v-model.trim="profile.bio" class="textarea" maxlength="100" placeholder="介绍一下自己，最多100字"></textarea><small>{{ profile.bio.length }} / 100</small><p v-if="fieldErrors.bio" class="field-error">{{ fieldErrors.bio }}</p></label>
       <p v-if="error" class="form-error">{{ error }}</p>
       <div class="edit-actions">
         <button class="btn btn-outline" @click="editing=false">取消</button>
@@ -625,6 +655,7 @@ async function cancelAccount() {
 .avatar-editor .btn{height:36px;font-size:11px}
 .edit-panel .form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
 .edit-panel label{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:800}
+.edit-panel label small{margin-top:2px;text-align:right;color:var(--color-ink-soft);font-size:9px}
 .edit-panel>label{margin-top:12px}
 .date-picker-wrapper{position:relative}
 .date-picker-wrapper .date-native{color:transparent;-webkit-text-fill-color:transparent}
@@ -641,6 +672,7 @@ async function cancelAccount() {
 .custom-tag-remove:hover{opacity:1}
 .edit-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .form-error{padding:9px;border-radius:8px;background:#ffeaed;color:var(--color-danger);font-size:10px}
+.field-error{margin-top:4px;color:var(--color-danger);font-size:10px}
 .empty-state{padding:36px;background:#fff;border:1px dashed var(--color-line);border-radius:var(--radius-md);color:var(--color-ink-soft);text-align:center}
 .empty-state.small{padding:20px;font-size:11px}
 .managed-activity{display:grid;gap:8px}
