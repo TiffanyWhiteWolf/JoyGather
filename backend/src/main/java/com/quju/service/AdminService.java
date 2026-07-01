@@ -4,6 +4,7 @@ import com.quju.dto.ActivityDto;
 import com.quju.dto.DashboardDto;
 import com.quju.dto.ReviewTaskDto;
 import com.quju.dto.UserDto;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,11 @@ public class AdminService {
     private final UserService userService;
     private final SocialService socialService;
 
+    public AdminService(JdbcTemplate jdbc, ActivityService activityService, UserService userService) {
+        this(jdbc, activityService, userService, null);
+    }
+
+    @Autowired
     public AdminService(JdbcTemplate jdbc, ActivityService activityService, UserService userService, SocialService socialService) {
         this.jdbc = jdbc;
         this.activityService = activityService;
