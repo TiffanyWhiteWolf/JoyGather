@@ -7,15 +7,19 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URLEncoder;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -23,12 +27,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class IntegrationService {
     private final JdbcTemplate jdbc;
     private final ObjectProvider<JavaMailSender> mailSender;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
 
     @Value("${quju.app.public-base-url:http://localhost:5173}")
     private String publicBaseUrl;
@@ -44,10 +49,45 @@ public class IntegrationService {
     private String aiModel;
     @Value("${quju.amap.key:}")
     private String amapKey;
+    @Value("${quju.nominatim.base-url:https://nominatim.openstreetmap.org}")
+    private String nominatimBaseUrl;
+    @Value("${quju.nominatim.user-agent:JoyGather/1.0 (+http://localhost:5173)}")
+    private String nominatimUserAgent;
+    @Value("${quju.nominatim.min-interval-ms:1000}")
+    private long nominatimMinIntervalMs;
+    @Value("${quju.nominatim.cache-ttl-ms:86400000}")
+    private long nominatimCacheTtlMs;
+    private final Map<String, GeoCacheEntry> geoCache = new ConcurrentHashMap<String, GeoCacheEntry>();
+    private final Object nominatimLock = new Object();
+    private volatile long lastNominatimRequestAt;
 
     public IntegrationService(JdbcTemplate jdbc, ObjectProvider<JavaMailSender> mailSender) {
         this.jdbc = jdbc;
         this.mailSender = mailSender;
+        this.restTemplate = createRestTemplate();
+    }
+
+    private RestTemplate createRestTemplate() {
+        configureProxyFromEnvironment();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(6000);
+        factory.setReadTimeout(8000);
+        return new RestTemplate(factory);
+    }
+
+    private void configureProxyFromEnvironment() {
+        String proxyUrl = System.getenv("HTTPS_PROXY");
+        if (proxyUrl == null || proxyUrl.trim().isEmpty()) proxyUrl = System.getenv("https_proxy");
+        if (proxyUrl == null || proxyUrl.trim().isEmpty()) return;
+        try {
+            URI proxy = URI.create(proxyUrl);
+            if (proxy.getHost() == null || proxy.getPort() < 1) return;
+            System.setProperty("https.proxyHost", proxy.getHost());
+            System.setProperty("https.proxyPort", String.valueOf(proxy.getPort()));
+            System.setProperty("http.proxyHost", proxy.getHost());
+            System.setProperty("http.proxyPort", String.valueOf(proxy.getPort()));
+            System.setProperty("http.nonProxyHosts", "localhost|127.*|[::1]");
+        } catch (Exception ignored) { }
     }
 
     public void sendActivationEmail(String email, String token) {
@@ -144,51 +184,44 @@ public class IntegrationService {
 
     public List<CommonDtos.GeoPoint> searchAmap(String keyword, String city) {
         String normalizedCity = normalizeCity(city);
-        if (amapKey == null || amapKey.trim().isEmpty()) {
-            logThirdParty("AMAP", "PLACE_SEARCH", "DEGRADED", keyword, "", "高德 Key 未配置", 0);
-            return fallbackPlaces(keyword, normalizedCity);
+        if (amapKey != null && !amapKey.trim().isEmpty()) {
+            long started = System.currentTimeMillis();
+            try {
+                String url = "https://restapi.amap.com/v3/place/text?key=" + encode(amapKey) + "&keywords=" + encode(DbSupport.safe(keyword, "")) + "&city=" + encode(normalizedCity) + "&citylimit=true&offset=10&page=1";
+                Map response = restTemplate.getForObject(url, Map.class);
+                List<CommonDtos.GeoPoint> points = parseAmapPlaces(response, normalizedCity);
+                logThirdParty("AMAP", "PLACE_SEARCH", "SUCCESS", keyword, String.valueOf(points.size()), "", elapsed(started));
+                if (!points.isEmpty()) return points;
+            } catch (Exception ex) {
+                logThirdParty("AMAP", "PLACE_SEARCH", "FAILED", keyword, "", trim(ex.getMessage()), elapsed(started));
+            }
         }
-        long started = System.currentTimeMillis();
-        try {
-            String url = "https://restapi.amap.com/v3/place/text?key=" + encode(amapKey) + "&keywords=" + encode(DbSupport.safe(keyword, "")) + "&city=" + encode(normalizedCity) + "&citylimit=true&offset=10&page=1";
-            Map response = restTemplate.getForObject(url, Map.class);
-            List<CommonDtos.GeoPoint> points = parseAmapPlaces(response, normalizedCity);
-            logThirdParty("AMAP", "PLACE_SEARCH", "SUCCESS", keyword, String.valueOf(points.size()), "", elapsed(started));
-            if (!points.isEmpty()) return points;
-        } catch (Exception ex) {
-            logThirdParty("AMAP", "PLACE_SEARCH", "FAILED", keyword, "", trim(ex.getMessage()), elapsed(started));
-        }
-        return fallbackPlaces(keyword, normalizedCity);
+        return searchNominatim(keyword, normalizedCity);
     }
 
     public CommonDtos.GeoPoint reverseGeocode(BigDecimal longitude, BigDecimal latitude) {
         CommonDtos.GeoPoint fallback = fallbackReversePoint(longitude, latitude);
-        if (amapKey == null || amapKey.trim().isEmpty()) {
-            logThirdParty("AMAP", "REVERSE_GEOCODE", "DEGRADED", longitude + "," + latitude, fallback.getDistrict(), "高德 Key 未配置", 0);
-            return fallback;
+        if (amapKey != null && !amapKey.trim().isEmpty()) {
+            long started = System.currentTimeMillis();
+            try {
+                String location = longitude.toPlainString() + "," + latitude.toPlainString();
+                String url = "https://restapi.amap.com/v3/geocode/regeo?key=" + encode(amapKey) + "&location=" + location + "&extensions=base";
+                Map response = restTemplate.getForObject(url, Map.class);
+                Map<String, Object> regeocode = asMap(response == null ? null : response.get("regeocode"));
+                Map<String, Object> address = asMap(regeocode.get("addressComponent"));
+                String district = cleanValue(address.get("district"), fallback.getDistrict());
+                String city = normalizeCity(cleanValue(address.get("city"), fallback.getCity()));
+                String formatted = cleanValue(regeocode.get("formatted_address"), "");
+                if (!formatted.isEmpty()) {
+                    CommonDtos.GeoPoint point = geoPoint(formatted, city, district, longitude, latitude);
+                    logThirdParty("AMAP", "REVERSE_GEOCODE", "SUCCESS", location, point.getDistrict(), "", elapsed(started));
+                    return point;
+                }
+            } catch (Exception ex) {
+                logThirdParty("AMAP", "REVERSE_GEOCODE", "FAILED", longitude + "," + latitude, "", trim(ex.getMessage()), elapsed(started));
+            }
         }
-        long started = System.currentTimeMillis();
-        try {
-            String location = longitude.toPlainString() + "," + latitude.toPlainString();
-            String url = "https://restapi.amap.com/v3/geocode/regeo?key=" + amapKey + "&location=" + location + "&extensions=base";
-            Map response = restTemplate.getForObject(url, Map.class);
-            Map<String, Object> regeocode = asMap(response == null ? null : response.get("regeocode"));
-            Map<String, Object> address = asMap(regeocode.get("addressComponent"));
-            String district = DbSupport.safe(String.valueOf(address.get("district")), fallback.getDistrict()).trim();
-            String city = DbSupport.safe(String.valueOf(address.get("city")), fallback.getCity()).trim();
-            String formatted = DbSupport.safe(String.valueOf(regeocode.get("formatted_address")), fallback.getName()).trim();
-            CommonDtos.GeoPoint point = new CommonDtos.GeoPoint();
-            point.setName(formatted == null || formatted.isEmpty() || "null".equals(formatted) ? fallback.getName() : formatted);
-            point.setCity(city == null || city.isEmpty() || "null".equals(city) ? fallback.getCity() : city.replace("市", ""));
-            point.setDistrict(district == null || district.isEmpty() || "null".equals(district) ? fallback.getDistrict() : district);
-            point.setLongitude(longitude);
-            point.setLatitude(latitude);
-            logThirdParty("AMAP", "REVERSE_GEOCODE", "SUCCESS", location, point.getDistrict(), "", elapsed(started));
-            return point;
-        } catch (Exception ex) {
-            logThirdParty("AMAP", "REVERSE_GEOCODE", "FAILED", longitude + "," + latitude, "", trim(ex.getMessage()), elapsed(started));
-            return fallback;
-        }
+        return reverseNominatim(longitude, latitude, fallback);
     }
 
     private HttpHeaders aiHeaders() {
@@ -277,6 +310,7 @@ public class IntegrationService {
             try {
                 CommonDtos.GeoPoint point = new CommonDtos.GeoPoint();
                 point.setName(DbSupport.safe(String.valueOf(poi.get("name")), "地点"));
+                point.setAddress(cleanValue(poi.get("address"), point.getName()));
                 point.setCity(normalizeCity(DbSupport.safe(String.valueOf(poi.get("cityname")), fallbackCity)));
                 point.setDistrict(DbSupport.safe(String.valueOf(poi.get("adname")), point.getCity()));
                 point.setLongitude(new BigDecimal(location[0]));
@@ -287,7 +321,128 @@ public class IntegrationService {
         return result;
     }
 
-    private List<CommonDtos.GeoPoint> fallbackPlaces(String keyword, String city) {
+    @SuppressWarnings("unchecked")
+    private List<CommonDtos.GeoPoint> searchNominatim(String keyword, String city) {
+        String normalizedKeyword = DbSupport.safe(keyword, "").trim();
+        if (normalizedKeyword.isEmpty()) return Collections.emptyList();
+        String cacheKey = "search|" + city + "|" + normalizedKeyword.toLowerCase(Locale.CHINA);
+        GeoCacheEntry cached = geoCache.get(cacheKey);
+        if (cached != null && !cached.expired(nominatimCacheTtlMs)) {
+            return new ArrayList<CommonDtos.GeoPoint>((List<CommonDtos.GeoPoint>) cached.value);
+        }
+        long started = System.currentTimeMillis();
+        try {
+            String viewbox = "北京".equals(city) ? "115.4,41.1,117.5,39.4" : "119.0,31.0,121.5,29.3";
+            String url = nominatimBaseUrl + "/search?format=jsonv2&addressdetails=1&namedetails=1&limit=5&countrycodes=cn&bounded=1&viewbox="
+                    + viewbox + "&q=" + encode(normalizedKeyword + ", " + city);
+            Object response = nominatimGet(url, List.class);
+            List<CommonDtos.GeoPoint> result = new ArrayList<CommonDtos.GeoPoint>();
+            if (response instanceof List) {
+                for (Object raw : (List) response) {
+                    Map<String, Object> row = asMap(raw);
+                    CommonDtos.GeoPoint point = parseNominatimPoint(row, city, null, null);
+                    if (point != null && city.equals(point.getCity())) result.add(point);
+                }
+            }
+            cache(cacheKey, result);
+            String responseSummary = result.isEmpty() ? "0 / raw=" + trim(String.valueOf(response)) : String.valueOf(result.size());
+            logThirdParty("NOMINATIM", "PLACE_SEARCH", "SUCCESS", normalizedKeyword + " / " + city, responseSummary, "", elapsed(started));
+            return result;
+        } catch (Exception ex) {
+            logThirdParty("NOMINATIM", "PLACE_SEARCH", "FAILED", normalizedKeyword + " / " + city, "", trim(ex.getMessage()), elapsed(started));
+            return exactFallbackPlaces(normalizedKeyword, city);
+        }
+    }
+
+    private CommonDtos.GeoPoint reverseNominatim(BigDecimal longitude, BigDecimal latitude, CommonDtos.GeoPoint fallback) {
+        String cacheKey = "reverse|" + longitude.setScale(5, RoundingMode.HALF_UP) + "|" + latitude.setScale(5, RoundingMode.HALF_UP);
+        GeoCacheEntry cached = geoCache.get(cacheKey);
+        if (cached != null && !cached.expired(nominatimCacheTtlMs)) return (CommonDtos.GeoPoint) cached.value;
+        long started = System.currentTimeMillis();
+        try {
+            String url = nominatimBaseUrl + "/reverse?format=jsonv2&addressdetails=1&namedetails=1&zoom=18&lat="
+                    + encode(latitude.toPlainString()) + "&lon=" + encode(longitude.toPlainString());
+            Object response = nominatimGet(url, Map.class);
+            CommonDtos.GeoPoint point = parseNominatimPoint(asMap(response), fallback.getCity(), longitude, latitude);
+            if (point == null || point.getName() == null || point.getName().trim().isEmpty()) return fallback;
+            cache(cacheKey, point);
+            logThirdParty("NOMINATIM", "REVERSE_GEOCODE", "SUCCESS", longitude + "," + latitude, point.getName(), "", elapsed(started));
+            return point;
+        } catch (Exception ex) {
+            logThirdParty("NOMINATIM", "REVERSE_GEOCODE", "FAILED", longitude + "," + latitude, "", trim(ex.getMessage()), elapsed(started));
+            return fallback;
+        }
+    }
+
+    private CommonDtos.GeoPoint parseNominatimPoint(Map<String, Object> row, String fallbackCity,
+                                                     BigDecimal forcedLongitude, BigDecimal forcedLatitude) {
+        if (row == null || row.isEmpty()) return null;
+        Map<String, Object> address = asMap(row.get("address"));
+        String displayName = cleanValue(row.get("display_name"), "");
+        String city = cityFromNominatim(address, displayName, fallbackCity);
+        BigDecimal longitude = forcedLongitude == null ? decimalValue(row.get("lon")) : forcedLongitude;
+        BigDecimal latitude = forcedLatitude == null ? decimalValue(row.get("lat")) : forcedLatitude;
+        if (longitude == null || latitude == null) return null;
+        String district = firstNonBlank(address, "city_district", "district", "city", "county", "suburb");
+        if (district.isEmpty() || "北京市".equals(district) || "杭州市".equals(district)) district = nearestDistrict(city, longitude, latitude);
+        String name = cleanValue(row.get("name"), "");
+        if (name.isEmpty()) name = firstNonBlank(address, "amenity", "building", "shop", "tourism", "leisure", "road", "neighbourhood", "suburb");
+        if (name.isEmpty() && !displayName.isEmpty()) name = displayName.split(",")[0].trim();
+        if (name.isEmpty()) return null;
+        CommonDtos.GeoPoint point = geoPoint(name, city, district, longitude, latitude);
+        point.setAddress(displayName.isEmpty() ? name : displayName);
+        return point;
+    }
+
+    private Object nominatimGet(String url, Class responseType) throws InterruptedException {
+        synchronized (nominatimLock) {
+            long waitMs = nominatimMinIntervalMs - (System.currentTimeMillis() - lastNominatimRequestAt);
+            if (waitMs > 0) Thread.sleep(waitMs);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("User-Agent", nominatimUserAgent);
+            headers.set("Referer", publicBaseUrl);
+            headers.set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.5");
+            Object body = restTemplate.exchange(url, HttpMethod.GET, new HttpEntity<Void>(headers), responseType).getBody();
+            lastNominatimRequestAt = System.currentTimeMillis();
+            return body;
+        }
+    }
+
+    private void cache(String key, Object value) {
+        if (geoCache.size() >= 512) geoCache.clear();
+        geoCache.put(key, new GeoCacheEntry(value));
+    }
+
+    private String cityFromNominatim(Map<String, Object> address, String displayName, String fallbackCity) {
+        String iso = cleanValue(address.get("ISO3166-2-lvl4"), "");
+        if ("CN-BJ".equalsIgnoreCase(iso) || displayName.contains("北京市")) return "北京";
+        if ("CN-ZJ".equalsIgnoreCase(iso) || displayName.contains("杭州市")) return "杭州";
+        return normalizeCity(fallbackCity);
+    }
+
+    private String firstNonBlank(Map<String, Object> values, String... keys) {
+        for (String key : keys) {
+            String value = cleanValue(values.get(key), "");
+            if (!value.isEmpty()) return value;
+        }
+        return "";
+    }
+
+    private String cleanValue(Object value, String fallback) {
+        String text = value == null ? "" : String.valueOf(value).trim();
+        return text.isEmpty() || "null".equalsIgnoreCase(text) ? fallback : text;
+    }
+
+    private BigDecimal decimalValue(Object value) {
+        try {
+            String text = cleanValue(value, "");
+            return text.isEmpty() ? null : new BigDecimal(text);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private List<CommonDtos.GeoPoint> exactFallbackPlaces(String keyword, String city) {
         String[][] rows = "北京".equals(city)
                 ? new String[][] {
                     {"奥林匹克森林公园南门", "朝阳区", "116.392891", "40.015120"},
@@ -307,16 +462,15 @@ public class IntegrationService {
             if (!search.isEmpty() && !row[0].toLowerCase(Locale.CHINA).contains(search) && !row[1].contains(search)) continue;
             result.add(geoPoint(row[0], city, row[1], row[2], row[3]));
         }
-        if (!result.isEmpty()) return result;
-        String[] first = rows[0];
-        return Collections.singletonList(geoPoint(search.isEmpty() ? city + "市中心" : keyword.trim(), city, first[1], first[2], first[3]));
+        return result;
     }
 
     private CommonDtos.GeoPoint fallbackReversePoint(BigDecimal longitude, BigDecimal latitude) {
         String city = cityForCoordinate(longitude, latitude);
         String district = nearestDistrict(city, longitude, latitude);
         CommonDtos.GeoPoint point = new CommonDtos.GeoPoint();
-        point.setName("当前位置 " + latitude.toPlainString() + ", " + longitude.toPlainString());
+        point.setName("");
+        point.setAddress("");
         point.setCity(city);
         point.setDistrict(district);
         point.setLongitude(longitude);
@@ -372,13 +526,25 @@ public class IntegrationService {
     }
 
     private CommonDtos.GeoPoint geoPoint(String name, String city, String district, String longitude, String latitude) {
+        return geoPoint(name, city, district, new BigDecimal(longitude), new BigDecimal(latitude));
+    }
+
+    private CommonDtos.GeoPoint geoPoint(String name, String city, String district, BigDecimal longitude, BigDecimal latitude) {
         CommonDtos.GeoPoint point = new CommonDtos.GeoPoint();
         point.setName(name);
+        point.setAddress(name);
         point.setCity(city);
         point.setDistrict(district);
-        point.setLongitude(new BigDecimal(longitude));
-        point.setLatitude(new BigDecimal(latitude));
+        point.setLongitude(longitude);
+        point.setLatitude(latitude);
         return point;
+    }
+
+    private static class GeoCacheEntry {
+        private final Object value;
+        private final long createdAt = System.currentTimeMillis();
+        private GeoCacheEntry(Object value) { this.value = value; }
+        private boolean expired(long ttlMs) { return System.currentTimeMillis() - createdAt > ttlMs; }
     }
 
     private String encode(String value) {
