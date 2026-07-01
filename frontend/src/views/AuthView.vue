@@ -20,14 +20,13 @@ const license = ref('')
 const showPassword = ref(false)
 const submitted = ref(false)
 const error = ref('')
-const activationToken = ref('')
 const isRegister = computed(() => mode.value === 'register')
 const isAdminLogin = computed(() => route.query.role === 'admin' && !isRegister.value)
 
 watch(isAdminLogin, () => { error.value = '' })
 
 interface AuthResponse { token: string; user: User }
-interface ActivationResponse { userId: string; activationToken: string; status: string }
+interface ActivationResponse { userId: string; status: string }
 
 async function submit() {
   error.value = ''
@@ -40,7 +39,6 @@ async function submit() {
   try {
     if (isRegister.value) {
       const result = await apiPost<ActivationResponse>('/auth/register', { email: email.value, password: password.value, confirmPassword: confirmPassword.value, nickname: nickname.value, role: role.value, merchantName: merchantName.value, licenseName: license.value })
-      activationToken.value = result.activationToken
       submitted.value = true
     } else {
       const result = await apiPost<AuthResponse>('/auth/login', { email: email.value, password: password.value, adminLogin: isAdminLogin.value })
@@ -55,17 +53,7 @@ async function submit() {
   }
 }
 
-async function activateNow() {
-  try {
-    await apiGet<User>(`/auth/activate?token=${activationToken.value}`)
-    switchMode('login')
-    error.value = '账号已激活，请登录。'
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '激活失败，请稍后重试。'
-  }
-}
-
-function switchMode(next: 'login' | 'register') { mode.value = next; submitted.value = false; error.value = ''; activationToken.value = ''; confirmPassword.value = '' }
+function switchMode(next: 'login' | 'register') { mode.value = next; submitted.value = false; error.value = ''; confirmPassword.value = '' }
 
 onMounted(async () => {
   const token = String(route.query.activate || '')
@@ -99,7 +87,7 @@ onMounted(async () => {
         </form>
         <p class="admin-hint"><RouterLink v-if="!isAdminLogin" to="/auth?role=admin">管理员登录</RouterLink><template v-else><span>管理员账号由系统预先创建，不提供公开注册。</span><RouterLink to="/auth" class="back-link">返回用户登录 / 注册</RouterLink></template></p>
       </template>
-      <template v-else><div class="activation"><CheckCircle2 /><h2>激活邮件已发送</h2><p>我们已向 <b>{{ email }}</b> 发送激活链接。激活后即可登录；商家资料会在激活后进入人工审核。</p><button class="auth-submit" @click="activateNow">使用本地激活链接完成激活</button><button class="auth-secondary" @click="switchMode('login')">返回登录</button></div></template>
+      <template v-else><div class="activation"><CheckCircle2 /><h2>激活邮件已发送</h2><p>我们已向 <b>{{ email }}</b> 发送激活链接。请查收邮件并点击链接完成激活后登录；商家资料会在激活后进入人工审核。</p><button class="auth-secondary" @click="switchMode('login')">返回登录</button></div></template>
     </main>
   </div>
 </template>

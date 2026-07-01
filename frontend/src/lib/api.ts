@@ -36,7 +36,12 @@ async function unwrap<T>(response: Response): Promise<T> {
       const body = await response.json() as { message?: string }
       if (body.message) message = body.message
     } catch { /* keep default */ }
-    if (response.status === 401 || /请先登录|登录已过期|账号已被封禁|账号已注销/.test(message)) clearAuthStorage()
+    if (response.status === 401 || /请先登录|登录已过期|账号已被封禁|账号已注销/.test(message)) {
+      clearAuthStorage()
+      if (window.location.pathname !== '/auth') {
+        window.location.href = '/auth?redirect=' + encodeURIComponent(window.location.pathname + window.location.search)
+      }
+    }
     throw new Error(message)
   }
   const body = await response.json() as ApiEnvelope<T>

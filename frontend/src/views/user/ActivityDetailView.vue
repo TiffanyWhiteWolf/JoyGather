@@ -43,6 +43,7 @@ async function loadActivity() {
 }
 
 async function confirmJoin(){
+  if (!app.isLoggedIn) { router.push('/auth?redirect=' + encodeURIComponent(window.location.pathname + window.location.search)); return }
   formError.value = ''
   for (const field of activity.value.joinFields ?? []) {
     if (!registrationForm[field]?.trim()) {
@@ -60,6 +61,7 @@ async function confirmJoin(){
   }
 }
 async function cancelJoin(){
+  if (!app.isLoggedIn) { router.push('/auth?redirect=' + encodeURIComponent(window.location.pathname + window.location.search)); return }
   try {
     await apiDelete<RegistrationResult>(`/activities/${activity.value.id}/registrations/me`)
     app.cancelRegistration(activity.value.id)

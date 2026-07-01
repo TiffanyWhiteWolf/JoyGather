@@ -23,6 +23,7 @@ export const useAppStore = defineStore('app', () => {
 
   const joinedTeamIds = computed(() => Object.keys(teamRoles.value))
   const notifications = computed(() => notificationItems.value.filter(item => !item.read).length)
+  const isLoggedIn = computed(() => !!localStorage.getItem('quju:token'))
 
   function showToast(message: string) {
     toast.value = message
@@ -208,7 +209,7 @@ export const useAppStore = defineStore('app', () => {
 
   return {
     city, notifications, notificationItems, joinedActivityIds, waitingActivityIds, joinedTeamIds, teamRoles, friendIds, followedIds, blockedIds, draft, submittedActivities, toast,
-    registrationCount, setCity, showToast, joinActivity, cancelRegistration, joinTeam, addFriend, removeFriend, addFollowedId, removeFollowedId, addBlockedId, removeBlockedId, saveDraft, clearDraft, submitActivity, clearUserState, refreshUserState,refreshNotifications, markNotificationRead,
+    registrationCount, isLoggedIn, setCity, showToast, joinActivity, cancelRegistration, joinTeam, addFriend, removeFriend, addFollowedId, removeFollowedId, addBlockedId, removeBlockedId, saveDraft, clearDraft, submitActivity, clearUserState, refreshUserState,refreshNotifications, markNotificationRead,
     myTeamRole, isTeamOwner, isTeamAdmin,
   }
 })

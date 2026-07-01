@@ -136,7 +136,7 @@ public class UserService {
                     request.getNickname(), "低", "营业执照与门店认证", "待审核");
         }
         if (integrationService != null) integrationService.sendActivationEmail(request.getEmail().trim().toLowerCase(), activationToken);
-        return new AuthDtos.ActivationResponse(id, activationToken, "未激活");
+        return new AuthDtos.ActivationResponse(id, "未激活");
     }
 
     @Transactional
@@ -225,11 +225,35 @@ public class UserService {
         return user;
     }
 
+    private static final java.util.regex.Pattern NICKNAME_PATTERN =
+        java.util.regex.Pattern.compile("^[\\u4e00-\\u9fa5a-zA-Z0-9_\\-]+$");
+
     @Transactional
     public UserDto updateProfile(String authorization, CommonDtos.ProfileRequest request) {
         UserDto user = requireToken(authorization);
         if (request.getNickname() == null || request.getNickname().trim().isEmpty()) throw new IllegalStateException("昵称不能为空");
+        if (request.getNickname().trim().length() > 20) throw new IllegalStateException("昵称不能超过20个字符");
+        if (!NICKNAME_PATTERN.matcher(request.getNickname().trim()).matches()) throw new IllegalStateException("昵称只能包含中文、英文、数字、下划线和连字符");
         if (!nicknameAvailable(request.getNickname(), user.getId())) throw new IllegalStateException("昵称已被占用");
+        String gender = request.getGender();
+        if (gender != null && !gender.trim().isEmpty()) {
+            if (gender.trim().length() > 10) throw new IllegalStateException("性别不能超过10个字符");
+            if (!NICKNAME_PATTERN.matcher(gender.trim()).matches()) throw new IllegalStateException("性别包含非法字符");
+        }
+        String city = request.getCity();
+        if (city != null && !city.trim().isEmpty()) {
+            if (city.trim().length() > 20) throw new IllegalStateException("城市名称不能超过20个字符");
+            if (!NICKNAME_PATTERN.matcher(city.trim()).matches()) throw new IllegalStateException("城市名称只能包含中文、英文、数字、下划线和连字符");
+        }
+        if (request.getBirthday() != null && !request.getBirthday().trim().isEmpty()) {
+            try {
+                if (java.sql.Date.valueOf(request.getBirthday()).toLocalDate().isAfter(java.time.LocalDate.now()))
+                    throw new IllegalStateException("生日不能是未来日期");
+            } catch (IllegalArgumentException e) {
+                throw new IllegalStateException("生日格式无效");
+            }
+        }
+        if (request.getBio() != null && request.getBio().length() > 100) throw new IllegalStateException("个性签名不能超过100个字符");
         jdbc.update("update users set nickname = ?, avatar = ?, gender = ?, birthday = ?, city = ?, bio = ?, interests = ?, merchant_name = ?, merchant_nickname = ?, merchant_fields = ? where id = ?",
                 request.getNickname().trim(),
                 DbSupport.safe(request.getAvatar(), user.getAvatar()),
