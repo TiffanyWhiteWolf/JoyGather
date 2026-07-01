@@ -55,6 +55,9 @@ const currentUser = ref<User | null>(null)
 const activities = ref<Activity[]>([])
 const editing = ref(false)
 const activeTab = ref<ProfileTab>('我的活动')
+const activityFilters = ['全部', '未结束', '已结束'] as const
+type ActivityFilter = typeof activityFilters[number]
+const activityFilter = ref<ActivityFilter>('全部')
 const saving = ref(false)
 const uploadingAvatar = ref(false)
 const uploadingLicense = ref(false)
@@ -109,6 +112,16 @@ const customInterestTags = computed(() => parseInterestTags().filter(tag => !sug
 const checkedInCount = computed(() => checkinRows.value.filter(item => item.status === '已签到').length)
 const registeredCount = computed(() => checkinRows.value.filter(item => item.status === '已报名' || item.status === '已签到').length)
 const waitingCount = computed(() => checkinRows.value.filter(item => item.status === '候补中').length)
+const filteredActivities = computed(() => {
+  if (activityFilter.value === '已结束') return activities.value.filter(item => item.status === '已结束')
+  if (activityFilter.value === '未结束') return activities.value.filter(item => item.status !== '已结束')
+  return activities.value
+})
+const activityFilterCount = (filter: ActivityFilter) => {
+  if (filter === '已结束') return activities.value.filter(item => item.status === '已结束').length
+  if (filter === '未结束') return activities.value.filter(item => item.status !== '已结束').length
+  return activities.value.length
+}
 const merchantStatusText = computed(() => {
   if (currentUser.value?.role === '商家用户') return currentUser.value.verified ? '已认证商家' : '商家账号'
   if (latestMerchantApplication.value) return `认证${latestMerchantApplication.value.status}`
@@ -498,16 +511,21 @@ async function cancelAccount() {
         </div>
 
         <template v-if="activeTab==='我的活动'">
-          <div v-if="activities.length" class="activity-grid managed-activities">
-            <div v-for="activity in activities" :key="activity.id" class="managed-activity">
+          <div v-if="activities.length" class="activity-status-tabs">
+            <button v-for="filter in activityFilters" :key="filter" :class="{ active: activityFilter === filter }" @click="activityFilter=filter">
+              {{ filter }} <span>{{ activityFilterCount(filter) }}</span>
+            </button>
+          </div>
+          <div v-if="filteredActivities.length" class="activity-grid managed-activities">
+            <div v-for="activity in filteredActivities" :key="activity.id" class="managed-activity">
               <ActivityCard :activity="activity" show-status />
               <div class="activity-tools">
-                <span>{{ activity.status }}</span>
+                <span :class="{ ended: activity.status === '已结束' }">{{ activity.status }}</span>
                 <button @click="openCheckinManagement(activity)"><QrCode :size="15" />签到管理</button>
               </div>
             </div>
           </div>
-          <div v-else class="empty-state">你还没有发布活动。</div>
+          <div v-else class="empty-state">{{ activities.length ? `暂无${activityFilter}活动。` : '你还没有发布活动。' }}</div>
         </template>
 
         <template v-else-if="activeTab==='商家中心'">
@@ -677,6 +695,10 @@ async function cancelAccount() {
 .profile-tabs{display:flex;gap:22px;margin-bottom:18px;border-bottom:1px solid var(--color-line)}
 .profile-tabs button{padding:12px 2px;border:0;border-bottom:2px solid transparent;background:none;color:var(--color-ink-soft);font-weight:700;white-space:nowrap}
 .profile-tabs button.active{border-color:var(--color-primary);color:var(--color-ink)}
+.activity-status-tabs{display:flex;gap:8px;margin-bottom:16px}
+.activity-status-tabs button{padding:8px 12px;border:1px solid var(--color-line);border-radius:var(--radius-pill);background:#fff;color:var(--color-ink-soft);font-size:11px;font-weight:800}
+.activity-status-tabs button span{margin-left:4px;color:inherit;opacity:.7}
+.activity-status-tabs button.active{border-color:var(--color-primary);background:var(--color-primary-soft);color:var(--color-primary)}
 .profile-grid .activity-grid{grid-template-columns:1fr 1fr}
 .side-card{margin-bottom:15px;padding:20px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}
 .side-card h3{font-size:14px}
@@ -721,6 +743,7 @@ async function cancelAccount() {
 .managed-activity{display:grid;gap:8px}
 .activity-tools{padding:10px;border:1px solid var(--color-line);border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .activity-tools span{padding:5px 7px;border-radius:6px;background:var(--color-mint-soft);color:var(--color-mint);font-size:10px;font-weight:800}
+.activity-tools span.ended{background:var(--color-bg);color:var(--color-ink-soft)}
 .activity-tools button{border:0;background:none;color:var(--color-primary);display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800}
 .merchant-panel{padding:22px;background:#fff;border:1px solid var(--color-line);border-radius:var(--radius-md)}
 .merchant-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
