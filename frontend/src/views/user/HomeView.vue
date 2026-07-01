@@ -55,7 +55,7 @@ watch(() => app.city, loadHome)
     </section>
 
     <section class="container page-section">
-      <div class="feed-head"><SectionHeader eyebrow="ACTIVITY FEED" :title="`${feedTab}活动`" description="活动数据来自 MySQL，草稿和已下架内容不会出现在信息流中" link="/discover" /><div class="feed-tabs"><button v-for="tab in ['最新','推荐','附近'] as const" :key="tab" :class="{active:feedTab===tab}" @click="feedTab=tab">{{ tab }}</button></div></div>
+      <div class="feed-head"><SectionHeader eyebrow="ACTIVITY FEED" :title="`${feedTab}活动`" description="发现城市里的精彩活动，与志趣相投的人不期而遇" link="/discover" /><div class="feed-tabs"><button v-for="tab in ['最新','推荐','附近'] as const" :key="tab" :class="{active:feedTab===tab}" @click="feedTab=tab">{{ tab }}</button></div></div>
       <div class="activity-grid"><ActivityCard v-for="activity in feedActivities.slice(0, 3)" :key="activity.id" :activity="activity" /></div>
     </section>
 

@@ -16,6 +16,7 @@ public class MessageDtos {
         private Boolean pinned;
         private Boolean muted;
         private String friendUserId;
+        private int nonFriendMessageCount;
         private List<MessageDto> messages;
         public String getId() { return id; }
         public void setId(String id) { this.id = id; }
@@ -41,6 +42,8 @@ public class MessageDtos {
         public void setMuted(Boolean muted) { this.muted = muted; }
         public String getFriendUserId() { return friendUserId; }
         public void setFriendUserId(String friendUserId) { this.friendUserId = friendUserId; }
+        public int getNonFriendMessageCount() { return nonFriendMessageCount; }
+        public void setNonFriendMessageCount(int nonFriendMessageCount) { this.nonFriendMessageCount = nonFriendMessageCount; }
         public List<MessageDto> getMessages() { return messages; }
         public void setMessages(List<MessageDto> messages) { this.messages = messages; }
     }

@@ -196,6 +196,7 @@ export interface Conversation {
   pinned?: boolean
   muted?: boolean
   friendUserId?: string
+  nonFriendMessageCount?: number
   messages: Message[]
 }
 
@@ -241,4 +242,16 @@ export interface ActivityAfterEvent {
   reviewDeadline?: string
   eligibilityMessage: string
   myReview?: ActivityReview
+}
+
+export interface NotificationItem {
+  id: string
+  userId: string
+  type: string
+  title: string
+  content?: string
+  targetType?: string
+  targetId?: string
+  read: boolean
+  createdAt?: string
 }
