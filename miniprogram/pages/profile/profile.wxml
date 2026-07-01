@@ -1,0 +1,21 @@
+<view class="page">
+  <form class="card form-card" bindsubmit="submitProfile">
+    <view class="field">
+      <text class="label">昵称</text>
+      <input name="nickname" value="{{form.nickname}}" placeholder="请输入昵称" bindinput="onNicknameInput" />
+    </view>
+    <view class="field">
+      <text class="label">城市</text>
+      <input name="city" value="{{form.city}}" placeholder="杭州" bindinput="onCityInput" />
+    </view>
+    <view class="field">
+      <text class="label">个人简介</text>
+      <textarea name="bio" value="{{form.bio}}" maxlength="120" placeholder="介绍一下你喜欢的活动" bindinput="onBioInput" />
+    </view>
+    <view class="field">
+      <text class="label">兴趣标签</text>
+      <input name="interestsText" value="{{form.interestsText}}" placeholder="露营, 飞盘, 桌游" bindinput="onInterestsInput" />
+    </view>
+    <button class="primary-button" form-type="submit" loading="{{saving}}">保存资料</button>
+  </form>
+</view>

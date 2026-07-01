@@ -1,0 +1,35 @@
+{
+  "pages": [
+    "pages/home/home",
+    "pages/activity-detail/activity-detail",
+    "pages/my/my",
+    "pages/profile/profile",
+    "pages/login/login"
+  ],
+  "window": {
+    "navigationBarTitleText": "趣聚",
+    "navigationBarBackgroundColor": "#ff6b45",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f7f5f1",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#687083",
+    "selectedColor": "#ff6b45",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "text": "活动"
+      },
+      {
+        "pagePath": "pages/my/my",
+        "text": "我的"
+      }
+    ]
+  },
+  "style": "v2",
+  "lazyCodeLoading": "requiredComponents",
+  "sitemapLocation": "sitemap.json"
+}

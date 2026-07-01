@@ -1,0 +1,36 @@
+<view class="page my-page">
+  <view wx:if="{{!hasToken}}" class="card guest-card">
+    <view class="guest-title">登录后查看同步数据</view>
+    <view class="muted">使用网站邮箱账号，报名和资料会写入同一套后端。</view>
+    <button class="primary-button" bindtap="goLogin">去登录</button>
+  </view>
+
+  <block wx:else>
+    <view class="card profile-card">
+      <image wx:if="{{user.avatar}}" class="avatar" src="{{user.avatar}}" mode="aspectFill" />
+      <view class="profile-main">
+        <view class="nickname">{{user.nickname}}</view>
+        <view class="muted">{{user.email}}</view>
+        <view class="chips">
+          <text>{{user.city || '杭州'}}</text>
+          <text>{{user.role}}</text>
+          <text>信用 {{user.credit}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="actions">
+      <button class="secondary-button" bindtap="goProfile">编辑资料</button>
+      <button class="danger-button" bindtap="logout">退出登录</button>
+    </view>
+
+    <view class="card list-card">
+      <view class="section-title">我的报名</view>
+      <view wx:if="{{statusList.length === 0}}" class="empty-line">暂无报名记录</view>
+      <view wx:for="{{statusList}}" wx:key="id" class="status-row">
+        <text class="activity-id">{{item.id}}</text>
+        <text class="status">{{item.status}}</text>
+      </view>
+    </view>
+  </block>
+</view>

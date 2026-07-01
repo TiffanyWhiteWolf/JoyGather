@@ -1,0 +1,24 @@
+<view class="page login-page">
+  <view class="brand">
+    <view class="logo">趣</view>
+    <view>
+      <view class="title">趣聚</view>
+      <view class="subtitle">使用网站账号登录，小程序数据实时同步</view>
+    </view>
+  </view>
+
+  <form class="card login-card" bindsubmit="submitLogin">
+    <view class="field">
+      <text class="label">邮箱</text>
+      <input name="email" value="{{email}}" type="text" placeholder="demo@quju.cn" bindinput="onEmailInput" />
+    </view>
+    <view class="field">
+      <text class="label">密码</text>
+      <input name="password" value="{{password}}" password placeholder="12345678" bindinput="onPasswordInput" />
+    </view>
+    <button class="primary-button" form-type="submit" loading="{{loading}}">登录</button>
+    <button class="secondary-button demo-button" type="default" bindtap="fillDemo">填入演示账号</button>
+  </form>
+
+  <view class="notice">个人版小程序账号课程演示时可在开发者工具中关闭合法域名校验。</view>
+</view>
