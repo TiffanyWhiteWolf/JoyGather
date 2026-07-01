@@ -9,6 +9,18 @@ const scanning = ref(false)
 const readerId = 'qr-reader'
 let html5QrCode: Html5Qrcode | null = null
 
+function handleScanResult(decodedText: string) {
+  try {
+    const data = JSON.parse(decodedText)
+    if (data.type === 'friend_request' && data.userId) {
+      stop()
+      emit('scanned', data.userId, data.nickname || '')
+    }
+  } catch {
+    // Not our QR code format, ignore
+  }
+}
+
 onMounted(async () => {
   try {
     scanning.value = true
@@ -16,17 +28,7 @@ onMounted(async () => {
     await html5QrCode.start(
       { facingMode: 'environment' },
       { fps: 10, qrbox: { width: 250, height: 250 } },
-      (decodedText: string) => {
-        try {
-          const data = JSON.parse(decodedText)
-          if (data.type === 'friend_request' && data.userId) {
-            stop()
-            emit('scanned', data.userId, data.nickname || '')
-          }
-        } catch {
-          // Not our QR code format, ignore
-        }
-      },
+      handleScanResult,
       () => { /* ignore scan errors */ },
     )
   } catch (err: unknown) {
@@ -39,6 +41,27 @@ onMounted(async () => {
     scanning.value = false
   }
 })
+
+async function handleFileUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !html5QrCode) return
+  error.value = ''
+  try {
+    // 先停止摄像头扫描
+    if (html5QrCode) {
+      try { await html5QrCode.stop() } catch { /* ignore */ }
+      scanning.value = false
+    }
+    // 使用实例方法扫描图片文件
+    const result = await html5QrCode.scanFile(file, false)
+    handleScanResult(result)
+  } catch {
+    error.value = '未识别到有效的好友二维码，请检查图片'
+  } finally {
+    input.value = ''
+  }
+}
 
 function stop() {
   scanning.value = false
@@ -69,6 +92,18 @@ onUnmounted(() => stop())
       <div v-if="error" class="scanner-error">{{ error }}</div>
       <div id="qr-reader" class="scanner-viewport"></div>
       <p class="scanner-tip">将二维码对准框内即可自动识别</p>
+      <div class="scanner-upload">
+        <span class="upload-divider">或</span>
+        <label class="upload-btn">
+          上传二维码图片
+          <input
+            type="file"
+            accept="image/*"
+            style="display:none"
+            @change="handleFileUpload"
+          />
+        </label>
+      </div>
     </div>
   </div>
 </template>
@@ -127,5 +162,28 @@ onUnmounted(() => stop())
   text-align: center;
   color: var(--color-ink-soft);
   font-size: 12px;
+}
+.scanner-upload {
+  margin-top: 14px;
+  text-align: center;
+}
+.upload-divider {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+.upload-btn {
+  display: inline-block;
+  padding: 8px 18px;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  color: var(--color-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.upload-btn:hover {
+  background: var(--color-primary-soft);
 }
 </style>

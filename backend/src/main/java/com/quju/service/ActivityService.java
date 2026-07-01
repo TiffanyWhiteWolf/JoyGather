@@ -382,18 +382,52 @@ public class ActivityService {
         LocalDateTime expiresAt = LocalDateTime.now().plusHours(12);
         jdbc.update("insert into activity_checkin_codes (id,activity_id,organizer_id,code,location_required,expires_at) values (?,?,?,?,?,?)",
                 DbSupport.id("ck"), activityId, organizerId, code, locationRequired, Timestamp.valueOf(expiresAt));
-        return new ActivityOpsDtos.CheckinCodeResponse(code, "/check-in?code=" + code, expiresAt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        return new ActivityOpsDtos.CheckinCodeResponse(code, "/check-in?code=" + code, expiresAt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), locationRequired);
     }
 
     @Transactional
-    public RegistrationResult scanCheckin(String code, String userId) {
+    public RegistrationResult scanCheckin(String code, String userId, Double latitude, Double longitude) {
         List<Map<String, Object>> rows = jdbc.queryForList("select * from activity_checkin_codes where code = ? and (expires_at is null or expires_at > now())", code);
         if (rows.isEmpty()) throw new IllegalStateException("签到码无效或已过期");
         String activityId = String.valueOf(rows.get(0).get("activity_id"));
+        boolean locationRequired = isTruthy(rows.get(0).get("location_required"));
         List<String> statuses = jdbc.queryForList("select status from registrations where activity_id = ? and user_id = ?", String.class, activityId, userId);
-        if (statuses.isEmpty() || (!"已报名".equals(statuses.get(0)) && !"已签到".equals(statuses.get(0)))) throw new IllegalStateException("未报名用户不可签到");
+        if (statuses.isEmpty()) throw new IllegalStateException("未报名用户不可签到");
+        String currentStatus = statuses.get(0);
+        if ("已签到".equals(currentStatus)) throw new IllegalStateException("您已签到过该活动，无需重复签到。");
+        if (!"已报名".equals(currentStatus) && !"候补中".equals(currentStatus)) throw new IllegalStateException("当前状态不可签到");
+        if ("候补中".equals(currentStatus)) throw new IllegalStateException("候补中用户不可签到，请等待报名确认。");
+        if (locationRequired) {
+            if (latitude == null || longitude == null) throw new IllegalStateException("该签到码要求位置校验，请允许获取位置信息并重试。");
+            ActivityDto activity = requireActivity(activityId);
+            BigDecimal actLat = activity.getLatitude();
+            BigDecimal actLng = activity.getLongitude();
+            if (actLat == null || actLng == null) throw new IllegalStateException("活动未设置位置信息，无法进行位置校验。");
+            double distance = haversine(actLat.doubleValue(), actLng.doubleValue(), latitude, longitude);
+            if (distance > 500) throw new IllegalStateException(String.format("您不在活动地点附近（距离约 %.0f 米），签到需在活动现场进行。", distance));
+        }
         jdbc.update("update registrations set status = '已签到', checked_in_at = coalesce(checked_in_at, now()) where activity_id = ? and user_id = ?", activityId, userId);
-        return new RegistrationResult(activityId, userId, "已签到", 0, null);
+        ActivityDto activity = requireActivity(activityId);
+        return new RegistrationResult(activityId, userId, "已签到", 0, null, activity.getTitle());
+    }
+
+    /** Haversine 公式计算两点间距离（米） */
+    private double haversine(double lat1, double lng1, double lat2, double lng2) {
+        final double R = 6_371_000;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /** JDBC 可能将 TINYINT(1) 映射为 Boolean 或 Number，统一处理 */
+    private boolean isTruthy(Object value) {
+        if (value == null) return false;
+        if (value instanceof Boolean) return (Boolean) value;
+        if (value instanceof Number) return ((Number) value).intValue() == 1;
+        return "1".equals(String.valueOf(value)) || "true".equalsIgnoreCase(String.valueOf(value));
     }
 
     @Transactional

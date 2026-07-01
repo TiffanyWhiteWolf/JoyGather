@@ -36,6 +36,13 @@ public class MessageService {
                 "select sent_at from messages where conversation_id = ? order by sent_at desc limit 1",
                 (rs, n) -> rs.getTimestamp("sent_at"), conversation.getId());
             if (!lastSentList.isEmpty()) conversation.setLastTime(DbSupport.relativeTime(lastSentList.get(0)));
+            // 按用户计算未读数（不含自己发的消息）
+            Integer perUserUnread = jdbc.queryForObject(
+                "select count(*) from messages m " +
+                "where m.conversation_id = ? and m.sender_id != ? and m.message_type != 'SYSTEM' " +
+                "and m.sent_at > coalesce((select p2.last_read_at from conversation_participants p2 where p2.conversation_id = m.conversation_id and p2.user_id = ?), '1970-01-01')",
+                Integer.class, conversation.getId(), userId, userId);
+            conversation.setUnread(perUserUnread != null ? perUserUnread : 0);
             // 好友会话：动态设置对方的 name、avatar、userId
             if ("好友".equals(conversation.getType()) && !isWelcomeConversation(conversation.getId())) {
                 List<Map<String, Object>> others = jdbc.queryForList(
@@ -43,9 +50,22 @@ public class MessageService {
                     conversation.getId(), userId);
                 if (!others.isEmpty()) {
                     Map<String, Object> other = others.get(0);
+                    String otherId = String.valueOf(other.get("id"));
                     conversation.setName(String.valueOf(other.get("nickname")));
                     conversation.setAvatar(String.valueOf(other.get("avatar")));
-                    conversation.setFriendUserId(String.valueOf(other.get("id")));
+                    conversation.setFriendUserId(otherId);
+                    // 非好友时统计已发送消息数
+                    Integer friendCount = jdbc.queryForObject(
+                        "select count(*) from friendships where user_id = ? and friend_id = ?",
+                        Integer.class, userId, otherId);
+                    if (friendCount == null || friendCount == 0) {
+                        Integer msgCount = jdbc.queryForObject(
+                            "select count(*) from messages where conversation_id = ? and sender_id = ? " +
+                            "and message_type != 'SYSTEM' " +
+                            "and sent_at > coalesce((select max(sent_at) from messages where conversation_id = ? and message_type = 'SYSTEM'), '1970-01-01')",
+                            Integer.class, conversation.getId(), userId, conversation.getId());
+                        conversation.setNonFriendMessageCount(msgCount != null ? msgCount : 0);
+                    }
                 }
             }
         }
@@ -75,7 +95,7 @@ public class MessageService {
 
     public List<MessageDtos.MessageDto> messages(String conversationId, String userId) {
         requireParticipant(conversationId, userId);
-        return jdbc.query("select m.*, u.avatar sender_avatar from messages m left join users u on u.id = m.sender_id where m.conversation_id = ? order by m.sent_at asc", messageMapper(userId), conversationId);
+        return jdbc.query("select m.*, u.avatar sender_avatar from messages m left join users u on u.id = m.sender_id where m.conversation_id = ? and m.message_type != 'SYSTEM' order by m.sent_at asc", messageMapper(userId), conversationId);
     }
 
     @Transactional
@@ -95,6 +115,8 @@ public class MessageService {
                 id, conversationId, senderId, content.trim(), type, request.getMediaUrl(), request.getLatitude(), request.getLongitude(), true, false);
         jdbc.update("update conversations set last_message = ?, last_time = ? where id = ?", displayContent(type, content), DbSupport.relativeTime(new Timestamp(System.currentTimeMillis())), conversationId);
         jdbc.update("update conversations set unread = unread + 1 where id = ?", conversationId);
+        // 发送者自己标记已读，避免自己的消息出现红点
+        jdbc.update("update conversation_participants set last_read_at = now() where conversation_id = ? and user_id = ?", conversationId, senderId);
         return jdbc.queryForObject("select m.*, u.avatar sender_avatar from messages m left join users u on u.id = m.sender_id where m.id = ?", messageMapper(senderId), id);
     }
 
@@ -113,7 +135,7 @@ public class MessageService {
     @Transactional
     public void markConversationRead(String conversationId, String userId) {
         requireParticipant(conversationId, userId);
-        jdbc.update("update conversations set unread = 0 where id = ?", conversationId);
+        jdbc.update("update conversation_participants set last_read_at = now() where conversation_id = ? and user_id = ?", conversationId, userId);
     }
 
     @Transactional
@@ -220,7 +242,23 @@ public class MessageService {
                     String.class, conversationId, userId);
             if (others.isEmpty()) throw new IllegalStateException("非好友且非同队关系不可发送消息");
             Integer count = jdbc.queryForObject("select count(*) from friendships where user_id = ? and friend_id = ?", Integer.class, userId, others.get(0));
-            if (count == null || count == 0) throw new IllegalStateException("你们还不是好友，不能发送消息");
+            if (count == null || count == 0) {
+                Integer boundaryCount = jdbc.queryForObject(
+                    "select count(*) from messages where conversation_id = ? and message_type = 'SYSTEM'",
+                    Integer.class, conversationId);
+                if (boundaryCount == null || boundaryCount == 0) {
+                    throw new IllegalStateException("你们还不是好友，不能发送消息");
+                }
+                // 解除好友后最多允许发送 5 条消息，只统计分界消息之后的内容。
+                Integer msgCount = jdbc.queryForObject(
+                    "select count(*) from messages where conversation_id = ? and sender_id = ? " +
+                    "and message_type != 'SYSTEM' " +
+                    "and sent_at > coalesce((select max(sent_at) from messages where conversation_id = ? and message_type = 'SYSTEM'), '1970-01-01')",
+                    Integer.class, conversationId, userId, conversationId);
+                if (msgCount != null && msgCount >= 5) {
+                    throw new IllegalStateException("你们还不是好友，已发送 " + msgCount + " 条消息，不能再发送了");
+                }
+            }
         }
         if (teamId != null) {
             Integer count = jdbc.queryForObject("select count(*) from team_members where team_id = ? and user_id = ?", Integer.class, String.valueOf(teamId), userId);

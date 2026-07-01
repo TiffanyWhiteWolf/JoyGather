@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Building2, CalendarDays, Camera, CheckCircle2, ChevronRight, Copy, FileCheck, FileText, Heart, MapPin, QrCode, Send, Settings, ShieldAlert, Star, Trash2, Users, X } from 'lucide-vue-next'
+import { Building2, CalendarDays, Camera, CheckCircle2, ChevronRight, Copy, FileCheck, FileText, Heart, MapPin, Navigation, QrCode, Send, Settings, ShieldAlert, Star, Trash2, Users, X } from 'lucide-vue-next'
 import QRCode from 'qrcode'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -32,6 +32,7 @@ interface CheckinCodeResponse {
   code: string
   url: string
   expiresAt: string
+  locationRequired: boolean
 }
 
 interface RegistrationManagementRow {
@@ -72,6 +73,7 @@ const checkinUrl = ref('')
 const checkinQr = ref('')
 const checkinRows = ref<RegistrationManagementRow[]>([])
 const registrationLoading = ref(false)
+const checkinLocationRequired = ref(false)
 const cancelOpen = ref(false)
 const cancelling = ref(false)
 const cancelError = ref('')
@@ -270,7 +272,7 @@ async function generateCheckinCode(activity: Activity) {
   checkinOpen.value = true
   checkinLoading.value = true
   try {
-    const result = await apiPost<CheckinCodeResponse>(`/activities/${activity.id}/checkins/qr`, { locationRequired: false })
+    const result = await apiPost<CheckinCodeResponse>(`/activities/${activity.id}/checkins/qr`, { locationRequired: checkinLocationRequired.value })
     const fullUrl = new URL(result.url, window.location.origin).toString()
     checkinCode.value = result
     checkinUrl.value = fullUrl
@@ -420,7 +422,7 @@ async function cancelAccount() {
           <span v-for="tag in customInterestTags" :key="tag" class="custom-tag"># {{ tag }}<button type="button" class="custom-tag-remove" @click="removeCustomInterest(tag)">&times;</button></span>
         </div>
         <div v-if="showCustomInterest" class="custom-interest-row">
-          <input v-model="customInterestInput" class="input" placeholder="输入自定义兴趣，回车添加" @keyup.enter="addCustomInterest" @keyup.esc="showCustomInterest=false" />
+          <input v-model="customInterestInput" class="input" @keyup.enter="addCustomInterest" @keyup.esc="showCustomInterest=false" />
           <button type="button" class="btn btn-primary" @click="addCustomInterest">添加</button>
         </div>
       </label>
@@ -535,6 +537,10 @@ async function cancelAccount() {
           </button>
           <button class="btn btn-outline" :disabled="registrationLoading" @click="checkinActivity && loadCheckinRows(checkinActivity.id)">刷新名单</button>
         </div>
+        <label class="checkin-location-toggle">
+          <input type="checkbox" v-model="checkinLocationRequired" />
+          <span>要求位置校验（参与者需在活动现场附近才能签到）</span>
+        </label>
         <div v-if="checkinLoading" class="qr-loading">正在生成签到二维码...</div>
         <div v-else-if="checkinCode" class="qr-panel">
           <img class="qr-image" :src="checkinQr" alt="签到二维码" />
@@ -543,6 +549,7 @@ async function cancelAccount() {
             <span><b>有效期至</b>{{ formatDateTime(checkinCode.expiresAt) }}</span>
           </div>
           <button class="btn btn-outline" @click="copyCheckinUrl"><Copy :size="16" />复制签到链接</button>
+          <p v-if="checkinCode.locationRequired" class="checkin-location-hint"><Navigation :size="14" />此签到码要求位置校验，参与者需在活动现场 500 米范围内。</p>
         </div>
         <section class="registration-panel">
           <h3>报名与签到状态</h3>
@@ -686,6 +693,8 @@ async function cancelAccount() {
 .checkin-summary span{font-size:10px;color:var(--color-ink-soft);font-weight:800}
 .checkin-actions{display:flex;gap:8px;margin-bottom:12px}
 .checkin-actions .btn{justify-content:center}
+.checkin-location-toggle{display:flex;align-items:center;gap:7px;margin-bottom:12px;font-size:11px;color:var(--color-ink-soft);cursor:pointer}
+.checkin-location-toggle input[type=checkbox]{width:15px;height:15px;accent-color:var(--color-primary)}
 .qr-loading{padding:32px;border:1px dashed var(--color-line);border-radius:12px;color:var(--color-ink-soft);text-align:center}
 .qr-panel{padding:14px;border:1px solid var(--color-line);border-radius:12px;background:#fff}
 .qr-image{display:block;width:220px;height:220px;margin:4px auto 16px;border:1px solid var(--color-line);border-radius:12px}
@@ -700,6 +709,7 @@ async function cancelAccount() {
 .registration-row div{min-width:0}
 .registration-row b{display:block;font-size:12px}
 .registration-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-ink-soft);font-size:10px}
+.checkin-location-hint{display:flex;align-items:center;gap:6px;margin:10px 0 0;color:var(--color-mint);font-size:10px;font-weight:800}
 .status-tag{padding:6px 8px;border-radius:8px;background:var(--color-primary-soft);color:var(--color-primary);font-size:10px;font-style:normal;font-weight:800;white-space:nowrap}
 .status-tag.done{background:var(--color-mint-soft);color:var(--color-mint)}
 .status-tag.waiting{background:#fff5d8;color:#9b6b00}

@@ -11,6 +11,7 @@ import { getCityConfig, supportedCities, type SupportedCity } from '@/config/cit
 const app = useAppStore()
 const route = useRoute()
 const router = useRouter()
+const AI_PLAN_STORAGE_KEY = 'quju:ai-plan'
 const step = ref(1)
 const submitted = ref(false)
 const submittedActivity = ref<Activity | null>(null)
@@ -34,6 +35,14 @@ const templates = [
   { name: '学习交流', category: '学习交流' as ActivityCategory, title: '主题分享 + 轻松社交', tags: '分享、讨论、知识交流', summary: '每个人都可以用 10 分钟分享一个最近有启发的主题。', safety: '请尊重他人表达，理性讨论，不录音不外传。' },
   { name: '公益活动', category: '公益活动' as ActivityCategory, title: '社区志愿清洁日', tags: '志愿、社区、环保', summary: '一起清理公共区域和绿步道，也认识同样在意城市的人。', safety: '请穿轻便服装和防滑鞋，现场统一发放手套和夹具。' },
 ]
+
+interface StoredAiPlan {
+  title?: string
+  introduction?: string
+  tags?: string[]
+  schedule?: string[]
+  safetyNote?: string
+}
 
 const form = reactive<ActivityDraft>({
   id: `draft-${Date.now()}`, title: '', category: '城市探索', tags: '', summary: '',
@@ -111,6 +120,71 @@ function useTemplate(index: number) {
   const item = templates[index]
   Object.assign(form, { category: item.category, title: item.title, tags: item.tags, summary: item.summary, safetyNote: item.safety })
   app.showToast(`已应用「${item.name}」模板`)
+}
+
+function limitText(value: string, max: number) {
+  const text = value.trim()
+  return text.length > max ? text.slice(0, max - 1) + '…' : text
+}
+
+function inferCategory(plan: StoredAiPlan): ActivityCategory {
+  const text = `${plan.title || ''} ${(plan.tags || []).join(' ')} ${plan.introduction || ''}`
+  if (/徒步|露营|户外|登山|骑行|飞盘|运动/.test(text)) return '户外运动'
+  if (/桌游|剧本|狼人杀|游戏/.test(text)) return '桌游聚会'
+  if (/分享|读书|学习|交流|工作坊|讲座/.test(text)) return '学习交流'
+  if (/健身|瑜伽|跑步|羽毛球|篮球|训练/.test(text)) return '运动健身'
+  if (/公益|志愿|环保|社区/.test(text)) return '公益活动'
+  return '城市探索'
+}
+
+function normalizeAiTags(plan: StoredAiPlan) {
+  return (plan.tags || [])
+    .map(item => String(item).trim())
+    .filter(Boolean)
+    .slice(0, 5)
+    .join('、')
+}
+
+function aiSummary(plan: StoredAiPlan) {
+  const parts = [String(plan.introduction || '').trim()]
+  const schedule = (plan.schedule || []).map(item => String(item).trim()).filter(Boolean)
+  if (schedule.length) {
+    parts.push(`建议流程：\n${schedule.map((item, index) => `${index + 1}. ${item}`).join('\n')}`)
+  }
+  return limitText(parts.filter(Boolean).join('\n\n'), 1000)
+}
+
+function readStoredAiPlan() {
+  try {
+    const raw = sessionStorage.getItem(AI_PLAN_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as StoredAiPlan
+    if (!parsed || (!parsed.title && !parsed.introduction)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function applyAiPlan(plan: StoredAiPlan) {
+  Object.assign(form, {
+    title: limitText(String(plan.title || 'AI 生成活动方案'), 30),
+    category: inferCategory(plan),
+    tags: normalizeAiTags(plan) || 'AI策划、社交、新手友好',
+    summary: aiSummary(plan) || '这是一场由 AI 生成的活动方案，可继续补充亮点、流程和适合人群。',
+    safetyNote: String(plan.safetyNote || '').trim() || '发布前请确认集合地点、天气预案、紧急联系人和交通返程安排。',
+  })
+  app.showToast('已载入 AI 生成方案，可继续编辑')
+}
+
+function applyAiFallbackTemplate() {
+  Object.assign(form, {
+    title: '月光底片·老街夜游摄影漫步',
+    category: '城市探索',
+    tags: '城市探索、摄影、新手友好',
+    summary: '用镜头收集老街的灯光与路人，不比器材，只交换观察城市的方式。',
+    safetyNote: '请确认夜间照明、紧急联系人和清晰的集合地点。',
+  })
 }
 
 function validateCurrentStep() {
@@ -331,7 +405,11 @@ onMounted(async () => {
       latitude.value = Number(source.latitude)
     }
   }
-  if (route.query.ai === '1') Object.assign(form, { title: '月光底片·老街夜游摄影漫步', category: '城市探索', tags: '城市探索、摄影、新手友好', summary: '用镜头收集老街的灯光与路人，不比器材，只交换观察城市的方式。', safetyNote: '请确认夜间照明、紧急联系人和清晰的集合地点。' })
+  if (route.query.ai === '1') {
+    const aiPlan = readStoredAiPlan()
+    if (aiPlan) applyAiPlan(aiPlan)
+    else applyAiFallbackTemplate()
+  }
 })
 </script>
 
@@ -350,7 +428,7 @@ onMounted(async () => {
           <div class="templates"><button v-for="(item,i) in templates" :key="item.name" @click="useTemplate(i)"><ClipboardCopy :size="16" /><span><b>{{ item.name }}</b><small>一键填充常用内容</small></span></button></div>
           <div class="input-group"><label>活动名称 *</label><input v-model.trim="form.title" class="input" maxlength="30" placeholder="例如：落日以后，沿运河散步" /><small>{{ form.title.length }} / 30</small><p v-if="fieldErrors.title" class="field-error">{{ fieldErrors.title }}</p></div>
           <div class="form-grid"><div class="input-group"><label>活动类型 *</label><select v-model="form.category" class="select"><option v-for="item in categories" :key="item">{{ item }}</option></select></div><div class="input-group"><label>兴趣标签 *</label><input v-model.trim="form.tags" class="input" placeholder="用顿号分隔，最多 5 个" /><p v-if="fieldErrors.tags" class="field-error">{{ fieldErrors.tags }}</p></div></div>
-          <div class="input-group"><label>活动简介 *</label><textarea v-model.trim="form.summary" class="textarea" maxlength="500" placeholder="活动亮点、流程和适合的人群"></textarea><small>{{ form.summary.length }} / 500</small><p v-if="fieldErrors.summary" class="field-error">{{ fieldErrors.summary }}</p></div>
+          <div class="input-group"><label>活动简介 *</label><textarea v-model.trim="form.summary" class="textarea" maxlength="1000" placeholder="活动亮点、流程和适合的人群"></textarea><small>{{ form.summary.length }} / 1000</small><p v-if="fieldErrors.summary" class="field-error">{{ fieldErrors.summary }}</p></div>
         </template>
 
         <template v-else-if="step===2">
