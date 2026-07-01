@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Bell, ChevronDown, Compass, FileText, LogOut, Map, Menu, MessageCircle, Plus, QrCode, Sparkles, Users, X } from 'lucide-vue-next'
+import { Bell, ChevronDown, Compass, FileText, LogOut, Map, Menu, MessageCircle, Plus, QrCode, Sparkles, Upload, Users, X } from 'lucide-vue-next'
+import { Html5Qrcode } from 'html5-qrcode'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
@@ -18,6 +19,7 @@ const noticeWrap = ref<HTMLElement | null>(null)
 const qrOpen = ref(false)
 const qrTab = ref<'my' | 'scan'>('my')
 const showQrScanner = ref(false)
+const qrFileInput = ref<HTMLInputElement | null>(null)
 const currentUser = ref<User | null>(null)
 const cities = supportedCities
 const nav = [
@@ -85,14 +87,44 @@ async function logout() {
 async function handleScanned(userId: string, _nickname: string) {
   showQrScanner.value = false
   if (userId === currentUser.value?.id) {
-    alert('这是你自己的二维码')
+    app.showToast('这是你自己的二维码')
     return
   }
   try {
     await apiPost('/friends/requests', { userId, source: 'QR_CODE', message: '' })
-    alert('好友申请已发送！')
+    app.showToast('好友申请已发送！')
   } catch (err) {
-    alert(err instanceof Error ? err.message : '发送好友申请失败')
+    app.showToast(err instanceof Error ? err.message : '发送好友申请失败')
+  }
+}
+
+async function handleQrFileUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  try {
+    const scanner = new Html5Qrcode('qr-file-scan-temp')
+    const result = await scanner.scanFile(file, false)
+    const data = JSON.parse(result)
+    if (data.type === 'friend_request' && data.userId) {
+      if (data.userId === currentUser.value?.id) {
+        app.showToast('这是你自己的二维码')
+        return
+      }
+      qrOpen.value = false
+      try {
+        await apiPost('/friends/requests', { userId: data.userId, source: 'QR_CODE', message: '' })
+        app.showToast('好友申请已发送！')
+      } catch (err) {
+        app.showToast(err instanceof Error ? err.message : '发送好友申请失败')
+      }
+    } else {
+      app.showToast('未识别到有效的好友二维码，请检查图片')
+    }
+  } catch {
+    app.showToast('未识别到有效的好友二维码，请检查图片')
+  } finally {
+    input.value = ''
   }
 }
 
@@ -165,6 +197,12 @@ onBeforeUnmount(() => {
               <div v-else class="qr-panel qr-scan-panel">
                 <p>扫描其他用户的二维码即可发送好友申请</p>
                 <button class="btn btn-primary btn-sm" @click="showQrScanner=true;qrOpen=false">打开摄像头</button>
+                <span class="scan-divider">或</span>
+                <label class="scan-upload-btn">
+                  <Upload :size="14" />
+                  上传二维码图片
+                  <input ref="qrFileInput" type="file" accept="image/*" style="display:none" @change="handleQrFileUpload" />
+                </label>
               </div>
             </div>
           </div>
@@ -177,10 +215,11 @@ onBeforeUnmount(() => {
     </header>
     <main><RouterView /></main>
     <footer class="site-footer">
-      <div class="container footer-inner"><div class="brand brand-light"><span class="brand-mark"><span></span><span></span><span></span></span><span>趣聚</span></div><p>去见面，去同频，去发现城市的另一面。</p><div class="footer-links"><RouterLink to="/auth">登录 / 注册</RouterLink><RouterLink to="/admin">运营后台 →</RouterLink></div></div>
+      <div class="container footer-inner"><div class="brand brand-light"><span class="brand-mark"><span></span><span></span><span></span></span><span>趣聚</span></div><p>去见面，去同频，去发现城市的另一面。</p></div>
     </footer>
   </div>
   <QrScannerModal v-if="showQrScanner" @close="showQrScanner=false" @scanned="handleScanned" />
+  <div id="qr-file-scan-temp" style="display:none"></div>
 </template>
 
 <style scoped>
@@ -208,4 +247,7 @@ onBeforeUnmount(() => {
 .qr-tabs button.active{color:var(--color-primary);box-shadow:inset 0 -2px var(--color-primary)}
 .qr-panel{padding:16px;display:flex;flex-direction:column;align-items:center}
 .qr-scan-panel p{margin:0 0 12px;color:var(--color-ink-soft);font-size:12px;text-align:center}
+.scan-divider{display:block;margin:10px 0;color:var(--color-ink-soft);font-size:12px}
+.scan-upload-btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:1px dashed var(--color-border);border-radius:8px;color:var(--color-primary);font-size:12px;cursor:pointer}
+.scan-upload-btn:hover{background:var(--color-primary-soft)}
 </style>

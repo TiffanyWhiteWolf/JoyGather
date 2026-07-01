@@ -78,6 +78,7 @@ public class SocialService {
         jdbc.update("delete from friendships where (user_id = ? and friend_id = ?) or (user_id = ? and friend_id = ?)", followerId, followeeId, followeeId, followerId);
         jdbc.update("update users set following_count = (select count(*) from follows where follower_id = ?) where id = ?", followerId, followerId);
         jdbc.update("update users set follower_count = (select count(*) from follows where followee_id = ?) where id = ?", followeeId, followeeId);
+        insertNonFriendBoundary(followerId, followeeId);
     }
 
     @Transactional
@@ -91,6 +92,7 @@ public class SocialService {
     public void removeFriend(String userId, String friendId) {
         if (!isFriend(userId, friendId)) throw new IllegalStateException("好友关系不存在");
         jdbc.update("delete from friendships where (user_id = ? and friend_id = ?) or (user_id = ? and friend_id = ?)", userId, friendId, friendId, userId);
+        insertNonFriendBoundary(userId, friendId);
     }
 
     @Transactional
@@ -108,6 +110,7 @@ public class SocialService {
         jdbc.update("update users set follower_count = (select count(*) from follows where followee_id = ?) where id = ?", userId, userId);
         jdbc.update("update users set following_count = (select count(*) from follows where follower_id = ?) where id = ?", blockedUserId, blockedUserId);
         jdbc.update("update users set follower_count = (select count(*) from follows where followee_id = ?) where id = ?", blockedUserId, blockedUserId);
+        insertNonFriendBoundary(userId, blockedUserId);
     }
 
     @Transactional
@@ -181,5 +184,23 @@ public class SocialService {
     private boolean blocked(String a, String b) {
         Integer count = jdbc.queryForObject("select count(*) from user_blocks where (user_id = ? and blocked_user_id = ?) or (user_id = ? and blocked_user_id = ?)", Integer.class, a, b, b, a);
         return count != null && count > 0;
+    }
+
+    private void insertNonFriendBoundary(String userA, String userB) {
+        try {
+            List<String> convIds = jdbc.queryForList(
+                "select c.id from conversations c where c.type = '好友' " +
+                "and exists (select 1 from conversation_participants where conversation_id = c.id and user_id = ?) " +
+                "and exists (select 1 from conversation_participants where conversation_id = c.id and user_id = ?)",
+                String.class, userA, userB);
+            if (!convIds.isEmpty()) {
+                jdbc.update(
+                    "insert into messages (id, conversation_id, sender_id, content, message_type, mine, read_flag) " +
+                    "values (?, ?, ?, '', 'SYSTEM', false, true)",
+                    DbSupport.id("ms"), convIds.get(0), userA);
+            }
+        } catch (Exception e) {
+            // 分界消息插入失败不影响取消关注/拉黑主流程
+        }
     }
 }

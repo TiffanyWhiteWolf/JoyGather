@@ -6,6 +6,7 @@ import com.quju.dto.UserDto;
 import com.quju.service.UserService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -57,6 +58,13 @@ public class UserController {
                                       @RequestBody CommonDtos.AccountCancellationRequest request) {
         userService.cancelAccount(authorization, request);
         return ApiResponse.success(null);
+    }
+
+    @GetMapping("/{id}")
+    public ApiResponse<Map<String, Object>> getUser(@PathVariable String id,
+                                                    @RequestHeader(value = "Authorization", required = false) String authorization) {
+        UserDto current = userService.optionalToken(authorization);
+        return ApiResponse.success(userService.getPublicProfile(id, current == null ? null : current.getId()));
     }
 
     @GetMapping("/search")
