@@ -26,6 +26,6 @@ public class CheckinController {
     public ApiResponse<RegistrationResult> scan(@RequestBody ActivityOpsDtos.CheckinScanRequest request,
                                                 @RequestHeader(value = "Authorization", required = false) String authorization) {
         String userId = userService.requireToken(authorization).getId();
-        return ApiResponse.success(activityService.scanCheckin(request.getCode(), userId));
+        return ApiResponse.success(activityService.scanCheckin(request.getCode(), userId, request.getLatitude(), request.getLongitude()));
     }
 }

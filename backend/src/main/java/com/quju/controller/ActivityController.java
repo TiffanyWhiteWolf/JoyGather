@@ -208,11 +208,4 @@ public class ActivityController {
         String userId = userService.requireToken(authorization).getId();
         return ApiResponse.success(activityService.reviewActivity(id, userId, request));
     }
-
-    @PostMapping("/checkins/scan")
-    public ApiResponse<RegistrationResult> scan(@RequestBody ActivityOpsDtos.CheckinScanRequest request,
-                                                @RequestHeader(value = "Authorization", required = false) String authorization) {
-        String userId = userService.requireToken(authorization).getId();
-        return ApiResponse.success(activityService.scanCheckin(request.getCode(), userId));
-    }
 }
